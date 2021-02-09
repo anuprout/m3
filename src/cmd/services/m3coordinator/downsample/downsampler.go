@@ -135,7 +135,6 @@ func defaultMetricsAppenderOptions(opts DownsamplerOptions, agg agg) metricsAppe
 		metricTagsIteratorPool: agg.pools.metricTagsIteratorPool,
 		debugLogging:           debugLogging,
 		logger:                 logger,
-		augmentM3Tags:          agg.m3PrefixFilter,
 	}
 }
 
@@ -175,6 +174,25 @@ func (d *downsampler) OnUpdate(namespaces m3.ClusterNamespaces) {
 		}
 	}
 
+	var isAnyAggNamespaceDisabled bool
+	for _, ns := range namespaces {
+		attrs := ns.Options().Attributes()
+		if attrs.MetricsType != storagemetadata.AggregatedMetricsType {
+			continue
+		}
+
+		downsampleOpts, err := ns.Options().DownsampleOptions()
+		if err != nil {
+			errFmt := "unable to resolve downsample options for namespace: %v"
+			logger.Error(fmt.Sprintf(errFmt, ns.NamespaceID().String()))
+			continue
+		}
+		if !downsampleOpts.All {
+			isAnyAggNamespaceDisabled = true
+			break
+		}
+	}	
+
 	autoMappingRules, err := NewAutoMappingRules(namespaces)
 	if err != nil {
 		logger.Error("could not generate automapping rules for aggregated namespaces."+
@@ -203,6 +221,7 @@ func (d *downsampler) OnUpdate(namespaces m3.ClusterNamespaces) {
 	d.Lock()
 	d.metricsAppenderOpts.defaultStagedMetadatasProtos = defaultStagedMetadatasProtos
 	// Can only downsample when aggregated namespaces are available.
-	d.enabled = hasAggregatedNamespaces
+	d.enabled = hasAggregatedNamespaces && !isAnyAggNamespaceDisabled
+	logger.Info(fmt.Sprintf("Downsampler enabled: %v", d.enabled))
 	d.Unlock()
 }

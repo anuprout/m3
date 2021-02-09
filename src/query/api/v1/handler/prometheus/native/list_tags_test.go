@@ -22,7 +22,6 @@ package native
 
 import (
 	"errors"
-	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
@@ -111,8 +110,9 @@ func testListTags(t *testing.T, meta block.ResultMetadata, header string) {
 		return now
 	}
 
-	fb := handleroptions.NewFetchOptionsBuilder(
-		handleroptions.FetchOptionsBuilderOptions{})
+	fb, err := handleroptions.NewFetchOptionsBuilder(
+		handleroptions.FetchOptionsBuilderOptions{Timeout: 15 * time.Second})
+	require.NoError(t, err)
 	opts := options.EmptyHandlerOptions().
 		SetStorage(store).
 		SetFetchOptionsBuilder(fb).
@@ -155,8 +155,9 @@ func TestListErrorTags(t *testing.T) {
 		return now
 	}
 
-	fb := handleroptions.NewFetchOptionsBuilder(
-		handleroptions.FetchOptionsBuilderOptions{})
+	fb, err := handleroptions.NewFetchOptionsBuilder(
+		handleroptions.FetchOptionsBuilderOptions{Timeout: 15 * time.Second})
+	require.NoError(t, err)
 	opts := options.EmptyHandlerOptions().
 		SetStorage(store).
 		SetFetchOptionsBuilder(fb).
@@ -177,9 +178,6 @@ func TestListErrorTags(t *testing.T) {
 		r, err := ioutil.ReadAll(body)
 		require.NoError(t, err)
 
-		ex := `{"error":"err"}`
-		// NB: error handler adds a newline to the output.
-		ex = fmt.Sprintf("%s\n", ex)
-		require.Equal(t, ex, string(r))
+		require.JSONEq(t, `{"status":"error","error":"err"}`, string(r))
 	}
 }

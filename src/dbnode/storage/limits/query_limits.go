@@ -31,11 +31,14 @@ import (
 	"go.uber.org/atomic"
 )
 
-const defaultLookback = time.Second * 15
+const (
+	defaultLookback = time.Second * 15
+)
 
 type queryLimits struct {
-	docsLimit      *lookbackLimit
-	bytesReadLimit *lookbackLimit
+	docsLimit           *lookbackLimit
+	bytesReadLimit      *lookbackLimit
+	seriesDiskReadLimit *lookbackLimit
 }
 
 type lookbackLimit struct {
@@ -51,6 +54,8 @@ type lookbackLimitMetrics struct {
 	recentMax   tally.Gauge
 	total       tally.Counter
 	exceeded    tally.Counter
+
+	sourceLogger SourceLogger
 }
 
 var (
@@ -68,22 +73,30 @@ func DefaultLookbackLimitOptions() LookbackLimitOptions {
 }
 
 // NewQueryLimits returns a new query limits manager.
-func NewQueryLimits(
-	docsLimitOpts LookbackLimitOptions,
-	bytesReadLimitOpts LookbackLimitOptions,
-	instrumentOpts instrument.Options,
-) (QueryLimits, error) {
-	if err := docsLimitOpts.validate(); err != nil {
+func NewQueryLimits(options Options) (QueryLimits, error) {
+	if err := options.Validate(); err != nil {
 		return nil, err
 	}
-	if err := bytesReadLimitOpts.validate(); err != nil {
-		return nil, err
-	}
-	docsLimit := newLookbackLimit(instrumentOpts, docsLimitOpts, "docs-matched")
-	bytesReadLimit := newLookbackLimit(instrumentOpts, bytesReadLimitOpts, "disk-bytes-read")
+
+	var (
+		iOpts                   = options.InstrumentOptions()
+		docsLimitOpts           = options.DocsLimitOpts()
+		bytesReadLimitOpts      = options.BytesReadLimitOpts()
+		diskSeriesReadLimitOpts = options.DiskSeriesReadLimitOpts()
+		sourceLoggerBuilder     = options.SourceLoggerBuilder()
+
+		docsLimit = newLookbackLimit(
+			iOpts, docsLimitOpts, "docs-matched", sourceLoggerBuilder)
+		bytesReadLimit = newLookbackLimit(
+			iOpts, bytesReadLimitOpts, "disk-bytes-read", sourceLoggerBuilder)
+		seriesDiskReadLimit = newLookbackLimit(
+			iOpts, diskSeriesReadLimitOpts, "disk-series-read", sourceLoggerBuilder)
+	)
+
 	return &queryLimits{
-		docsLimit:      docsLimit,
-		bytesReadLimit: bytesReadLimit,
+		docsLimit:           docsLimit,
+		bytesReadLimit:      bytesReadLimit,
+		seriesDiskReadLimit: seriesDiskReadLimit,
 	}, nil
 }
 
@@ -91,25 +104,36 @@ func newLookbackLimit(
 	instrumentOpts instrument.Options,
 	opts LookbackLimitOptions,
 	name string,
+	sourceLoggerBuilder SourceLoggerBuilder,
 ) *lookbackLimit {
 	return &lookbackLimit{
 		name:    name,
 		options: opts,
-		metrics: newLookbackLimitMetrics(instrumentOpts, name),
+		metrics: newLookbackLimitMetrics(instrumentOpts, name, sourceLoggerBuilder),
 		recent:  atomic.NewInt64(0),
 		stopCh:  make(chan struct{}),
 	}
 }
 
-func newLookbackLimitMetrics(instrumentOpts instrument.Options, name string) lookbackLimitMetrics {
+func newLookbackLimitMetrics(
+	instrumentOpts instrument.Options,
+	name string,
+	sourceLoggerBuilder SourceLoggerBuilder,
+) lookbackLimitMetrics {
 	scope := instrumentOpts.
 		MetricsScope().
 		SubScope("query-limit")
+
+	sourceLogger := sourceLoggerBuilder.NewSourceLogger(name,
+		instrumentOpts.SetMetricsScope(scope))
+
 	return lookbackLimitMetrics{
 		recentCount: scope.Gauge(fmt.Sprintf("recent-count-%s", name)),
 		recentMax:   scope.Gauge(fmt.Sprintf("recent-max-%s", name)),
 		total:       scope.Counter(fmt.Sprintf("total-%s", name)),
 		exceeded:    scope.Tagged(map[string]string{"limit": name}).Counter("exceeded"),
+
+		sourceLogger: sourceLogger,
 	}
 }
 
@@ -121,13 +145,19 @@ func (q *queryLimits) BytesReadLimit() LookbackLimit {
 	return q.bytesReadLimit
 }
 
+func (q *queryLimits) DiskSeriesReadLimit() LookbackLimit {
+	return q.seriesDiskReadLimit
+}
+
 func (q *queryLimits) Start() {
 	q.docsLimit.start()
+	q.seriesDiskReadLimit.start()
 	q.bytesReadLimit.start()
 }
 
 func (q *queryLimits) Stop() {
 	q.docsLimit.stop()
+	q.seriesDiskReadLimit.stop()
 	q.bytesReadLimit.stop()
 }
 
@@ -135,11 +165,14 @@ func (q *queryLimits) AnyExceeded() error {
 	if err := q.docsLimit.exceeded(); err != nil {
 		return err
 	}
+	if err := q.seriesDiskReadLimit.exceeded(); err != nil {
+		return err
+	}
 	return q.bytesReadLimit.exceeded()
 }
 
 // Inc increments the current value and returns an error if above the limit.
-func (q *lookbackLimit) Inc(val int) error {
+func (q *lookbackLimit) Inc(val int, source []byte) error {
 	if val < 0 {
 		return fmt.Errorf("invalid negative query limit inc %d", val)
 	}
@@ -155,6 +188,8 @@ func (q *lookbackLimit) Inc(val int) error {
 	q.metrics.recentCount.Update(float64(recent))
 	q.metrics.total.Inc(valI64)
 
+	q.metrics.sourceLogger.LogSourceValue(valI64, source)
+
 	// Enforce limit (if specified).
 	return q.checkLimit(recent)
 }
@@ -166,9 +201,9 @@ func (q *lookbackLimit) exceeded() error {
 func (q *lookbackLimit) checkLimit(recent int64) error {
 	if q.options.Limit > 0 && recent > q.options.Limit {
 		q.metrics.exceeded.Inc(1)
-		return xerrors.NewInvalidParamsError(fmt.Errorf(
+		return xerrors.NewInvalidParamsError(NewQueryLimitExceededError(fmt.Sprintf(
 			"query aborted due to limit: name=%s, limit=%d, current=%d, within=%s",
-			q.name, q.options.Limit, recent, q.options.Lookback))
+			q.name, q.options.Limit, recent, q.options.Lookback)))
 	}
 	return nil
 }

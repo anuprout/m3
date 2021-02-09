@@ -22,7 +22,7 @@ package resources
 
 import (
 	"bytes"
-	"encoding/json"
+	"context"
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -30,15 +30,20 @@ import (
 	"time"
 
 	"github.com/m3db/m3/src/query/generated/proto/admin"
+	"github.com/m3db/m3/src/query/generated/proto/prompb"
+	xhttp "github.com/m3db/m3/src/x/net/http"
 
-	dockertest "github.com/ory/dockertest"
+	"github.com/gogo/protobuf/jsonpb"
+	"github.com/gogo/protobuf/proto"
+	"github.com/golang/snappy"
+	"github.com/ory/dockertest/v3"
+	"github.com/prometheus/common/model"
 	"go.uber.org/zap"
 )
 
 const (
-	defaultCoordinatorSource     = "coordinator"
-	defaultCoordinatorName       = "coord01"
-	defaultCoordinatorDockerfile = "resources/config/m3coordinator.Dockerfile"
+	defaultCoordinatorSource = "coordinator"
+	defaultCoordinatorName   = "coord01"
 )
 
 var (
@@ -47,10 +52,12 @@ var (
 	defaultCoordinatorOptions = dockerResourceOptions{
 		source:        defaultCoordinatorSource,
 		containerName: defaultCoordinatorName,
-		dockerFile:    defaultCoordinatorDockerfile,
 		portList:      defaultCoordinatorList,
 	}
 )
+
+// ResponseVerifier is a function that checks if the query response is valid.
+type ResponseVerifier func(int, map[string][]string, string, error) error
 
 // Coordinator is a wrapper for a coordinator. It provides a wrapper on HTTP
 // endpoints that expose cluster management APIs as well as read and write
@@ -61,8 +68,10 @@ type Coordinator interface {
 
 	// WriteCarbon writes a carbon metric datapoint at a given time.
 	WriteCarbon(port int, metric string, v float64, t time.Time) error
+	// WriteProm writes a prometheus metric.
+	WriteProm(name string, tags map[string]string, samples []prompb.Sample) error
 	// RunQuery runs the given query with a given verification function.
-	RunQuery(verifier GoalStateVerifier, query string) error
+	RunQuery(verifier ResponseVerifier, query string) error
 }
 
 // Admin is a wrapper for admin functions.
@@ -112,7 +121,7 @@ func (c *coordinator) GetNamespace() (admin.NamespaceGetResponse, error) {
 		return admin.NamespaceGetResponse{}, errClosed
 	}
 
-	url := c.resource.getURL(7201, "api/v1/namespace")
+	url := c.resource.getURL(7201, "api/v1/services/m3db/namespace")
 	logger := c.resource.logger.With(
 		zapMethod("getNamespace"), zap.String("url", url))
 
@@ -135,7 +144,7 @@ func (c *coordinator) GetPlacement() (admin.PlacementGetResponse, error) {
 		return admin.PlacementGetResponse{}, errClosed
 	}
 
-	url := c.resource.getURL(7201, "api/v1/placement")
+	url := c.resource.getURL(7201, "api/v1/services/m3db/placement")
 	logger := c.resource.logger.With(
 		zapMethod("getPlacement"), zap.String("url", url))
 
@@ -239,13 +248,7 @@ func (c *coordinator) CreateDatabase(
 		zapMethod("createDatabase"), zap.String("url", url),
 		zap.String("request", addRequest.String()))
 
-	b, err := json.Marshal(addRequest)
-	if err != nil {
-		logger.Error("failed to marshal", zap.Error(err))
-		return admin.DatabaseCreateResponse{}, err
-	}
-
-	resp, err := http.Post(url, "application/json", bytes.NewReader(b))
+	resp, err := makePostRequest(logger, url, &addRequest)
 	if err != nil {
 		logger.Error("failed post", zap.Error(err))
 		return admin.DatabaseCreateResponse{}, err
@@ -273,13 +276,7 @@ func (c *coordinator) AddNamespace(
 		zapMethod("addNamespace"), zap.String("url", url),
 		zap.String("request", addRequest.String()))
 
-	b, err := json.Marshal(addRequest)
-	if err != nil {
-		logger.Error("failed to marshal", zap.Error(err))
-		return admin.NamespaceGetResponse{}, err
-	}
-
-	resp, err := http.Post(url, "application/json", bytes.NewReader(b))
+	resp, err := makePostRequest(logger, url, &addRequest)
 	if err != nil {
 		logger.Error("failed post", zap.Error(err))
 		return admin.NamespaceGetResponse{}, err
@@ -330,8 +327,87 @@ func (c *coordinator) WriteCarbon(
 	// return nil
 }
 
+func (c *coordinator) WriteProm(name string, tags map[string]string, samples []prompb.Sample) error {
+	if c.resource.closed {
+		return errClosed
+	}
+
+	var (
+		url       = c.resource.getURL(7201, "api/v1/prom/remote/write")
+		reqLabels = []prompb.Label{{Name: []byte(model.MetricNameLabel), Value: []byte(name)}}
+	)
+
+	for tag, value := range tags {
+		reqLabels = append(reqLabels, prompb.Label{
+			Name:  []byte(tag),
+			Value: []byte(value),
+		})
+	}
+	writeRequest := prompb.WriteRequest{
+		Timeseries: []prompb.TimeSeries{
+			{
+				Labels:  reqLabels,
+				Samples: samples,
+			},
+		},
+	}
+
+	logger := c.resource.logger.With(
+		zapMethod("createDatabase"), zap.String("url", url),
+		zap.String("request", writeRequest.String()))
+
+	body, err := proto.Marshal(&writeRequest)
+	if err != nil {
+		logger.Error("failed marshaling request message", zap.Error(err))
+		return err
+	}
+	data := bytes.NewBuffer(snappy.Encode(nil, body))
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, url, data)
+	if err != nil {
+		logger.Error("failed constructing request", zap.Error(err))
+		return err
+	}
+	req.Header.Add(xhttp.HeaderContentType, xhttp.ContentTypeProtobuf)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		logger.Error("failed making a request", zap.Error(err))
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		logger.Error("status code not 2xx",
+			zap.Int("status code", resp.StatusCode),
+			zap.String("status", resp.Status))
+		return fmt.Errorf("status code %d", resp.StatusCode)
+	}
+
+	return nil
+}
+
+func makePostRequest(logger *zap.Logger, url string, body proto.Message) (*http.Response, error) {
+	data := bytes.NewBuffer(nil)
+	if err := (&jsonpb.Marshaler{}).Marshal(data, body); err != nil {
+		logger.Error("failed to marshal", zap.Error(err))
+
+		return nil, fmt.Errorf("failed to marshal: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, url, data)
+	if err != nil {
+		logger.Error("failed to construct request", zap.Error(err))
+
+		return nil, fmt.Errorf("failed to construct request: %w", err)
+	}
+
+	req.Header.Add(xhttp.HeaderContentType, xhttp.ContentTypeJSON)
+
+	return http.DefaultClient.Do(req)
+}
+
 func (c *coordinator) query(
-	verifier GoalStateVerifier, query string,
+	verifier ResponseVerifier, query string,
 ) error {
 	if c.resource.closed {
 		return errClosed
@@ -348,19 +424,13 @@ func (c *coordinator) query(
 	}
 
 	defer resp.Body.Close()
-	if resp.StatusCode/100 != 2 {
-		logger.Error("status code not 2xx",
-			zap.Int("status code", resp.StatusCode),
-			zap.String("status", resp.Status))
-		return fmt.Errorf("status code %d", resp.StatusCode)
-	}
-	defer resp.Body.Close()
 	b, err := ioutil.ReadAll(resp.Body)
-	return verifier(string(b), err)
+
+	return verifier(resp.StatusCode, resp.Header, string(b), err)
 }
 
 func (c *coordinator) RunQuery(
-	verifier GoalStateVerifier, query string,
+	verifier ResponseVerifier, query string,
 ) error {
 	if c.resource.closed {
 		return errClosed

@@ -103,8 +103,11 @@ func TestTagValues(t *testing.T) {
 		return now
 	}
 
-	fb := handleroptions.NewFetchOptionsBuilder(
-		handleroptions.FetchOptionsBuilderOptions{})
+	fb, err := handleroptions.NewFetchOptionsBuilder(
+		handleroptions.FetchOptionsBuilderOptions{
+			Timeout: 15 * time.Second,
+		})
+	require.NoError(t, err)
 	opts := options.EmptyHandlerOptions().
 		SetStorage(store).
 		SetNowFn(nowFn).
@@ -176,8 +179,11 @@ func TestTagValueErrors(t *testing.T) {
 		return now
 	}
 
-	fb := handleroptions.NewFetchOptionsBuilder(
-		handleroptions.FetchOptionsBuilderOptions{})
+	fb, err := handleroptions.NewFetchOptionsBuilder(
+		handleroptions.FetchOptionsBuilderOptions{
+			Timeout: 15 * time.Second,
+		})
+	require.NoError(t, err)
 	opts := options.EmptyHandlerOptions().
 		SetStorage(store).
 		SetNowFn(nowFn).
@@ -198,6 +204,6 @@ func TestTagValueErrors(t *testing.T) {
 	read, err := ioutil.ReadAll(rr.Body)
 	require.NoError(t, err)
 
-	ex := fmt.Sprintf(`{"error":"invalid path with no name present"}%s`, "\n")
-	assert.Equal(t, ex, string(read))
+	ex := `{"status":"error","error":"invalid path with no name present"}`
+	assert.JSONEq(t, ex, string(read))
 }
