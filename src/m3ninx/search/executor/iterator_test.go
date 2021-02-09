@@ -45,9 +45,30 @@ func TestIterator(t *testing.T) {
 
 	// Set up Readers.
 	docs := []doc.Document{
-		doc.NewDocumentFromEncoded(doc.Encoded{Bytes: []byte("encodedbytes1")}),
-		doc.NewDocumentFromEncoded(doc.Encoded{Bytes: []byte("encodedbytes2")}),
-		doc.NewDocumentFromEncoded(doc.Encoded{Bytes: []byte("encodedbytes3")}),
+		doc.Document{
+			Fields: []doc.Field{
+				doc.Field{
+					Name:  []byte("apple"),
+					Value: []byte("red"),
+				},
+			},
+		},
+		doc.Document{
+			Fields: []doc.Field{
+				doc.Field{
+					Name:  []byte("banana"),
+					Value: []byte("yellow"),
+				},
+			},
+		},
+		doc.Document{
+			Fields: []doc.Field{
+				doc.Field{
+					Name:  []byte("carrot"),
+					Value: []byte("orange"),
+				},
+			},
+		},
 	}
 
 	firstDocIter := doc.NewMockIterator(mockCtrl)

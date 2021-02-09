@@ -52,14 +52,8 @@ func NewServer(
 }
 
 func (s *server) ListenAndServe() (ns.Close, error) {
-	// NB(r): Keep ref to a local channel options since it's actually modified
-	// by TChannel itself to set defaults.
-	var opts *tchannel.ChannelOptions
-	if chanOpts := s.opts.ChannelOptions(); chanOpts != nil {
-		immutableOpts := *chanOpts
-		opts = &immutableOpts
-	}
-	channel, err := s.opts.TChanChannelFn()(s.service, channel.ChannelName, opts)
+	chanOpts := s.opts.ChannelOptions()
+	channel, err := tchannel.NewChannel(channel.ChannelName, chanOpts)
 	if err != nil {
 		return nil, err
 	}

@@ -73,7 +73,7 @@ func TestFilesystemBootstrapIndexVolumeTypes(t *testing.T) {
 		ID:   ident.StringID("foo"),
 		Tags: ident.NewTags(ident.StringTag("city", "new_york"), ident.StringTag("foo", "foo")),
 	}
-	fooDoc := doc.Metadata{
+	fooDoc := doc.Document{
 		ID: fooSeries.ID.Bytes(),
 		Fields: []doc.Field{
 			doc.Field{Name: []byte("city"), Value: []byte("new_york")},
@@ -85,7 +85,7 @@ func TestFilesystemBootstrapIndexVolumeTypes(t *testing.T) {
 		ID:   ident.StringID("bar"),
 		Tags: ident.NewTags(ident.StringTag("city", "new_jersey")),
 	}
-	barDoc := doc.Metadata{
+	barDoc := doc.Document{
 		ID: barSeries.ID.Bytes(),
 		Fields: []doc.Field{
 			doc.Field{Name: []byte("city"), Value: []byte("new_jersey")},
@@ -96,7 +96,7 @@ func TestFilesystemBootstrapIndexVolumeTypes(t *testing.T) {
 		ID:   ident.StringID("baz"),
 		Tags: ident.NewTags(ident.StringTag("city", "seattle")),
 	}
-	bazDoc := doc.Metadata{
+	bazDoc := doc.Document{
 		ID: bazSeries.ID.Bytes(),
 		Fields: []doc.Field{
 			doc.Field{Name: []byte("city"), Value: []byte("seattle")},
@@ -107,7 +107,7 @@ func TestFilesystemBootstrapIndexVolumeTypes(t *testing.T) {
 		ID:   ident.StringID("qux"),
 		Tags: ident.NewTags(ident.StringTag("city", "new_harmony")),
 	}
-	quxDoc := doc.Metadata{
+	quxDoc := doc.Document{
 		ID: quxSeries.ID.Bytes(),
 		Fields: []doc.Field{
 			doc.Field{Name: []byte("city"), Value: []byte("new_harmony")},
@@ -118,7 +118,7 @@ func TestFilesystemBootstrapIndexVolumeTypes(t *testing.T) {
 		ID:   ident.StringID("dux"),
 		Tags: ident.NewTags(ident.StringTag("city", "los_angeles")),
 	}
-	duxDoc := doc.Metadata{
+	duxDoc := doc.Document{
 		ID: duxSeries.ID.Bytes(),
 		Fields: []doc.Field{
 			doc.Field{Name: []byte("city"), Value: []byte("los_angeles")},
@@ -163,12 +163,12 @@ func TestFilesystemBootstrapIndexVolumeTypes(t *testing.T) {
 			Start:     now,
 		},
 	})
-	defaultIndexDocs := []doc.Metadata{
+	defaultIndexDocs := []doc.Document{
 		fooDoc,
 		barDoc,
 		bazDoc,
 	}
-	extraIndexDocs := []doc.Metadata{
+	extraIndexDocs := []doc.Document{
 		quxDoc,
 		duxDoc,
 	}

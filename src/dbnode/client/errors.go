@@ -54,26 +54,10 @@ func IsBadRequestError(err error) bool {
 	return false
 }
 
-// IsResourceExhaustedError determines if the error is a resource exhausted error.
-func IsResourceExhaustedError(err error) bool {
-	for err != nil {
-		if e, ok := err.(*rpc.Error); ok && tterrors.IsResourceExhaustedErrorFlag(e) { //nolint:errorlint
-			return true
-		}
-		err = xerrors.InnerError(err)
-	}
-	return false
-}
-
 // IsConsistencyResultError determines if the error is a consistency result error.
 func IsConsistencyResultError(err error) bool {
-	for err != nil {
-		if _, ok := err.(consistencyResultErr); ok { //nolint:errorlint
-			return true
-		}
-		err = xerrors.InnerError(err)
-	}
-	return false
+	_, ok := err.(consistencyResultErr)
+	return ok
 }
 
 // NumResponded returns how many nodes responded for a given error
@@ -133,8 +117,8 @@ func isHostNotAvailableError(err error) bool {
 
 type consistencyResultError interface {
 	error
-	xerrors.ContainedError
 
+	InnerError() error
 	numResponded() int
 	numSuccess() int
 }

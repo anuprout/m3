@@ -29,7 +29,9 @@ import (
 	"time"
 
 	"github.com/m3db/m3/src/cmd/services/m3coordinator/ingest"
+	dbconfig "github.com/m3db/m3/src/cmd/services/m3dbnode/config"
 	"github.com/m3db/m3/src/cmd/services/m3query/config"
+	"github.com/m3db/m3/src/dbnode/client"
 	m3json "github.com/m3db/m3/src/query/api/v1/handler/json"
 	"github.com/m3db/m3/src/query/api/v1/handler/prometheus/handleroptions"
 	"github.com/m3db/m3/src/query/api/v1/handler/prometheus/native"
@@ -41,14 +43,12 @@ import (
 	"github.com/m3db/m3/src/query/storage"
 	"github.com/m3db/m3/src/query/test/m3"
 	"github.com/m3db/m3/src/query/ts/m3db"
-	"github.com/m3db/m3/src/query/util/queryhttp"
 	"github.com/m3db/m3/src/x/instrument"
 	xsync "github.com/m3db/m3/src/x/sync"
 
 	"github.com/golang/mock/gomock"
 	"github.com/gorilla/mux"
 	"github.com/opentracing/opentracing-go/mocktracer"
-	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -91,23 +91,16 @@ func setupHandler(
 	instrumentOpts := instrument.NewOptions()
 	downsamplerAndWriter := ingest.NewDownsamplerAndWriter(store, nil, testWorkerPool, instrument.NewOptions())
 	engine := newEngine(store, time.Minute, instrumentOpts)
-	fetchOptsBuilder, err := handleroptions.NewFetchOptionsBuilder(
-		handleroptions.FetchOptionsBuilderOptions{
-			Timeout: 15 * time.Second,
-		})
-	if err != nil {
-		return nil, err
-	}
 	opts, err := options.NewHandlerOptions(
 		downsamplerAndWriter,
 		makeTagOptions(),
 		engine,
-		newPromEngine(),
+		nil,
 		nil,
 		nil,
 		config.Configuration{LookbackDuration: &defaultLookbackDuration},
 		nil,
-		fetchOptsBuilder,
+		handleroptions.NewFetchOptionsBuilder(handleroptions.FetchOptionsBuilderOptions{}),
 		models.QueryContextOptions{},
 		instrumentOpts,
 		defaultCPUProfileduration,
@@ -118,6 +111,7 @@ func setupHandler(
 		graphite.M3WrappedStorageOptions{},
 		testM3DBOpts,
 	)
+
 	if err != nil {
 		return nil, err
 	}
@@ -125,11 +119,39 @@ func setupHandler(
 	return NewHandler(opts, customHandlers...), nil
 }
 
-func newPromEngine() *promql.Engine {
-	return promql.NewEngine(promql.EngineOpts{
-		MaxSamples:         10000,
-		Timeout:            100 * time.Second,
-	})
+func TestHandlerFetchTimeout(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	storage, _ := m3.NewStorageAndSession(t, ctrl)
+	downsamplerAndWriter := ingest.NewDownsamplerAndWriter(storage, nil, testWorkerPool, instrument.NewOptions())
+
+	fourMin := 4 * time.Minute
+	dbconfig := &dbconfig.DBConfiguration{Client: client.Configuration{FetchTimeout: &fourMin}}
+	engine := newEngine(storage, time.Minute, instrument.NewOptions())
+	cfg := config.Configuration{LookbackDuration: &defaultLookbackDuration}
+	opts, err := options.NewHandlerOptions(
+		downsamplerAndWriter,
+		makeTagOptions(),
+		engine,
+		nil,
+		nil,
+		nil,
+		cfg,
+		dbconfig,
+		handleroptions.NewFetchOptionsBuilder(handleroptions.FetchOptionsBuilderOptions{}),
+		models.QueryContextOptions{},
+		instrument.NewOptions(),
+		defaultCPUProfileduration,
+		defaultPlacementServices,
+		svcDefaultOptions,
+		nil,
+		nil,
+		graphite.M3WrappedStorageOptions{},
+		testM3DBOpts,
+	)
+	require.NoError(t, err)
+
+	h := NewHandler(opts)
+	assert.Equal(t, 4*time.Minute, h.options.TimeoutOpts().FetchTimeout)
 }
 
 func TestPromRemoteReadGet(t *testing.T) {
@@ -140,6 +162,7 @@ func TestPromRemoteReadGet(t *testing.T) {
 
 	h, err := setupHandler(storage)
 	require.NoError(t, err, "unable to setup handler")
+	assert.Equal(t, 30*time.Second, h.options.TimeoutOpts().FetchTimeout)
 	err = h.RegisterRoutes()
 	require.NoError(t, err, "unable to register routes")
 	h.Router().ServeHTTP(res, req)
@@ -288,7 +311,7 @@ func TestCORSMiddleware(t *testing.T) {
 	h, err := setupHandler(s)
 	require.NoError(t, err, "unable to setup handler")
 
-	setupTestRouteRegistry(h.registry)
+	setupTestRoute(h.router)
 	res := doTestRequest(h.Router())
 
 	assert.Equal(t, "hello!", res.Body.String())
@@ -305,7 +328,7 @@ func doTestRequest(handler http.Handler) *httptest.ResponseRecorder {
 func TestTracingMiddleware(t *testing.T) {
 	mtr := mocktracer.New()
 	router := mux.NewRouter()
-	setupTestRouteRouter(router)
+	setupTestRoute(router)
 
 	handler := applyMiddleware(router, mtr)
 	doTestRequest(handler)
@@ -316,7 +339,7 @@ func TestTracingMiddleware(t *testing.T) {
 func TestCompressionMiddleware(t *testing.T) {
 	mtr := mocktracer.New()
 	router := mux.NewRouter()
-	setupTestRouteRouter(router)
+	setupTestRoute(router)
 
 	handler := applyMiddleware(router, mtr)
 	req := httptest.NewRequest("GET", testRoute, nil)
@@ -332,18 +355,7 @@ func TestCompressionMiddleware(t *testing.T) {
 
 const testRoute = "/foobar"
 
-func setupTestRouteRegistry(r *queryhttp.EndpointRegistry) {
-	r.Register(queryhttp.RegisterOptions{
-		Path: testRoute,
-		Handler: http.HandlerFunc(func(writer http.ResponseWriter, r *http.Request) {
-			writer.WriteHeader(http.StatusOK)
-			writer.Write([]byte("hello!"))
-		}),
-		Methods: methods(http.MethodGet),
-	})
-}
-
-func setupTestRouteRouter(r *mux.Router) {
+func setupTestRoute(r *mux.Router) {
 	r.HandleFunc(testRoute, func(writer http.ResponseWriter, r *http.Request) {
 		writer.WriteHeader(http.StatusOK)
 		writer.Write([]byte("hello!"))
@@ -365,102 +377,45 @@ func init() {
 	testWorkerPool.Init()
 }
 
-type assertFn func(t *testing.T, prev http.Handler, r *http.Request)
-
 type customHandler struct {
-	t         *testing.T
-	routeName string
-	methods   []string
-	assertFn  assertFn
+	t *testing.T
 }
 
-func (h *customHandler) Route() string     { return h.routeName }
-func (h *customHandler) Methods() []string { return h.methods }
+func (h *customHandler) Route() string     { return "/custom" }
+func (h *customHandler) Methods() []string { return []string{http.MethodGet} }
 func (h *customHandler) Handler(
 	opts options.HandlerOptions,
-	prev http.Handler,
 ) (http.Handler, error) {
 	assert.Equal(h.t, "z", string(opts.TagOptions().MetricName()))
 	fn := func(w http.ResponseWriter, r *http.Request) {
-		h.assertFn(h.t, prev, r)
-		_, err := w.Write([]byte("success!"))
-		require.NoError(h.t, err)
+		w.Write([]byte("success!"))
 	}
 
 	return http.HandlerFunc(fn), nil
 }
 
 func TestCustomRoutes(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/custom", nil)
+	res := httptest.NewRecorder()
 	ctrl := gomock.NewController(t)
 	store, _ := m3.NewStorageAndSession(t, ctrl)
 	instrumentOpts := instrument.NewOptions()
 	downsamplerAndWriter := ingest.NewDownsamplerAndWriter(store, nil, testWorkerPool, instrument.NewOptions())
 	engine := newEngine(store, time.Minute, instrumentOpts)
-	fetchOptsBuilder, err := handleroptions.NewFetchOptionsBuilder(
-		handleroptions.FetchOptionsBuilderOptions{
-			Timeout: 15 * time.Second,
-		})
-	require.NoError(t, err)
 	opts, err := options.NewHandlerOptions(
-		downsamplerAndWriter, makeTagOptions().SetMetricName([]byte("z")),
-		engine, newPromEngine(), nil, nil,
+		downsamplerAndWriter, makeTagOptions().SetMetricName([]byte("z")), engine, nil, nil, nil,
 		config.Configuration{LookbackDuration: &defaultLookbackDuration}, nil,
-		fetchOptsBuilder, models.QueryContextOptions{}, instrumentOpts, defaultCPUProfileduration,
+		handleroptions.NewFetchOptionsBuilder(handleroptions.FetchOptionsBuilderOptions{}),
+		models.QueryContextOptions{}, instrumentOpts, defaultCPUProfileduration,
 		defaultPlacementServices, svcDefaultOptions, NewQueryRouter(), NewQueryRouter(),
 		graphite.M3WrappedStorageOptions{}, testM3DBOpts)
+
 	require.NoError(t, err)
-	custom := &customHandler{
-		t:         t,
-		routeName: "/custom",
-		methods:   []string{http.MethodGet, http.MethodHead},
-		assertFn: func(t *testing.T, prev http.Handler, r *http.Request) {
-			assert.Nil(t, prev, "Should not shadow already existing handler")
-		},
-	}
-	customShadowGet := &customHandler{
-		t:         t,
-		routeName: "/custom",
-		methods:   []string{http.MethodGet},
-		assertFn: func(t *testing.T, prev http.Handler, r *http.Request) {
-			assert.NotNil(t, prev, "Should shadow already existing handler")
-		},
-	}
-	customShadowHead := &customHandler{
-		t:         t,
-		routeName: "/custom",
-		methods:   []string{http.MethodHead},
-		assertFn: func(t *testing.T, prev http.Handler, r *http.Request) {
-			assert.NotNil(t, prev, "Should shadow already existing handler")
-		},
-	}
-	customNew := &customHandler{
-		t:         t,
-		routeName: "/custom/new",
-		methods:   []string{http.MethodGet, http.MethodHead},
-		assertFn: func(t *testing.T, prev http.Handler, r *http.Request) {
-			assert.Nil(t, prev, "Should not shadow already existing handler")
-		},
-	}
-	handler := NewHandler(opts, custom, customShadowGet, customShadowHead, customNew)
+	custom := &customHandler{t: t}
+	handler := NewHandler(opts, custom)
 	require.NoError(t, err, "unable to setup handler")
 	err = handler.RegisterRoutes()
 	require.NoError(t, err, "unable to register routes")
-
-	for _, method := range custom.methods {
-		assertRoute(t, custom.routeName, method, handler, http.StatusOK)
-	}
-
-	for _, method := range customNew.methods {
-		assertRoute(t, customNew.routeName, method, handler, http.StatusOK)
-	}
-
-	assertRoute(t, customNew.routeName, http.MethodPost, handler, http.StatusMethodNotAllowed)
-	assertRoute(t, "/unknown", http.MethodGet, handler, http.StatusNotFound)
-}
-
-func assertRoute(t *testing.T, routeName string, method string, handler *Handler, expectedStatusCode int) {
-	req := httptest.NewRequest(method, routeName, nil)
-	res := httptest.NewRecorder()
 	handler.Router().ServeHTTP(res, req)
-	require.Equal(t, expectedStatusCode, res.Code)
+	require.Equal(t, res.Code, http.StatusOK)
 }

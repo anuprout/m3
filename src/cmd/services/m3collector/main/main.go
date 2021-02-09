@@ -22,13 +22,15 @@ package main
 
 import (
 	"flag"
-	"log"
+	"fmt"
 	_ "net/http/pprof" // pprof: for debug listen server if configured
+	"os"
 
 	"github.com/m3db/m3/src/cmd/services/m3collector/config"
 	"github.com/m3db/m3/src/collector/server"
 	xconfig "github.com/m3db/m3/src/x/config"
 	"github.com/m3db/m3/src/x/config/configflag"
+	"github.com/m3db/m3/src/x/etcd"
 )
 
 func main() {
@@ -39,8 +41,14 @@ func main() {
 
 	var cfg config.Configuration
 	if err := configOpts.MainLoad(&cfg, xconfig.Options{}); err != nil {
-		log.Fatalf("error loading config: %v", err)
+		// NB(r): Use fmt.Fprintf(os.Stderr, ...) to avoid etcd.SetGlobals()
+		// sending stdlib "log" to black hole. Don't remove unless with good reason.
+		fmt.Fprintf(os.Stderr, "error loading config: %v\n", err)
+		os.Exit(1)
 	}
+
+	// Set globals for etcd related packages.
+	etcd.SetGlobals()
 
 	server.Run(server.RunOptions{
 		Config: cfg,

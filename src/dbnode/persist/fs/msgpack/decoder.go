@@ -38,7 +38,6 @@ var (
 	emptyIndexSummariesInfo     schema.IndexSummariesInfo
 	emptyIndexBloomFilterInfo   schema.IndexBloomFilterInfo
 	emptyIndexEntry             schema.IndexEntry
-	emptyWideEntry              schema.WideEntry
 	emptyIndexSummary           schema.IndexSummary
 	emptyIndexSummaryToken      IndexSummaryToken
 	emptyLogInfo                schema.LogInfo
@@ -51,12 +50,12 @@ var (
 	errorIndexEntryChecksumMismatch                = errors.New("decode index entry encountered checksum mismatch")
 )
 
-// WideEntryLookupStatus is the status for a wide entry lookup.
-type WideEntryLookupStatus byte
+// IndexChecksumLookupStatus is the status for an index checksum lookup.
+type IndexChecksumLookupStatus byte
 
 const (
 	// ErrorLookupStatus indicates an error state.
-	ErrorLookupStatus WideEntryLookupStatus = iota
+	ErrorLookupStatus IndexChecksumLookupStatus = iota
 	// MatchedLookupStatus indicates the current entry ID matches the requested ID.
 	MatchedLookupStatus
 	// MismatchLookupStatus indicates the current entry ID preceeds the requested ID.
@@ -152,24 +151,24 @@ func (dec *Decoder) DecodeIndexEntry(bytesPool pool.BytesPool) (schema.IndexEntr
 	return indexEntry, nil
 }
 
-// DecodeToWideEntry decodes an index entry into a wide entry.
-func (dec *Decoder) DecodeToWideEntry(
+// DecodeIndexEntryToIndexChecksum decodes an index entry into a minimal index entry.
+func (dec *Decoder) DecodeIndexEntryToIndexChecksum(
 	compareID []byte,
 	bytesPool pool.BytesPool,
-) (schema.WideEntry, WideEntryLookupStatus, error) {
+) (schema.IndexChecksum, IndexChecksumLookupStatus, error) {
 	if dec.err != nil {
-		return emptyWideEntry, NotFoundLookupStatus, dec.err
+		return schema.IndexChecksum{}, NotFoundLookupStatus, dec.err
 	}
 	dec.readerWithDigest.setDigestReaderEnabled(true)
 	_, numFieldsToSkip := dec.decodeRootObject(indexEntryVersion, indexEntryType)
-	entry, status := dec.decodeWideEntry(compareID, bytesPool)
+	indexWithMetaChecksum, status := dec.decodeIndexChecksum(compareID, bytesPool)
 	dec.readerWithDigest.setDigestReaderEnabled(false)
 	dec.skip(numFieldsToSkip)
 	if status != MatchedLookupStatus || dec.err != nil {
-		return emptyWideEntry, status, dec.err
+		return schema.IndexChecksum{}, status, dec.err
 	}
 
-	return entry, status, nil
+	return indexWithMetaChecksum, status, nil
 }
 
 // DecodeIndexSummary decodes index summary.
@@ -483,13 +482,13 @@ func (dec *Decoder) decodeIndexEntry(bytesPool pool.BytesPool) schema.IndexEntry
 	return indexEntry
 }
 
-func (dec *Decoder) decodeWideEntry(
+func (dec *Decoder) decodeIndexChecksum(
 	compareID []byte,
 	bytesPool pool.BytesPool,
-) (schema.WideEntry, WideEntryLookupStatus) {
+) (schema.IndexChecksum, IndexChecksumLookupStatus) {
 	entry := dec.decodeIndexEntry(bytesPool)
 	if dec.err != nil {
-		return emptyWideEntry, ErrorLookupStatus
+		return schema.IndexChecksum{}, ErrorLookupStatus
 	}
 
 	if entry.EncodedTags == nil {
@@ -497,16 +496,16 @@ func (dec *Decoder) decodeWideEntry(
 			bytesPool.Put(entry.ID)
 		}
 
-		dec.err = fmt.Errorf("decode wide index requires files V1+")
-		return emptyWideEntry, ErrorLookupStatus
+		dec.err = fmt.Errorf("decode index checksum requires files V1+")
+		return schema.IndexChecksum{}, ErrorLookupStatus
 	}
 
 	compare := bytes.Compare(compareID, entry.ID)
 	var checksum int64
 	if compare == 0 {
 		// NB: need to compute hash before freeing entry bytes.
-		checksum = dec.hasher.HashIndexEntry(entry.ID, entry.EncodedTags, entry.DataChecksum)
-		return schema.WideEntry{
+		checksum = dec.hasher.HashIndexEntry(entry)
+		return schema.IndexChecksum{
 			IndexEntry:       entry,
 			MetadataChecksum: checksum,
 		}, MatchedLookupStatus
@@ -519,12 +518,12 @@ func (dec *Decoder) decodeWideEntry(
 
 	if compare > 0 {
 		// compareID can still exist after the current entry.ID
-		return emptyWideEntry, MismatchLookupStatus
+		return schema.IndexChecksum{}, MismatchLookupStatus
 	}
 
-	// compareID must have been before the current entry.ID, so this
+	// compareID must have been before the curret entry.ID, so this
 	// ID will not be matched.
-	return emptyWideEntry, NotFoundLookupStatus
+	return schema.IndexChecksum{}, NotFoundLookupStatus
 }
 
 func (dec *Decoder) decodeIndexSummary() (schema.IndexSummary, IndexSummaryToken) {

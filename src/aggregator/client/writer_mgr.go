@@ -24,7 +24,6 @@ import (
 	"errors"
 	"fmt"
 	"sync"
-	"time"
 
 	"github.com/m3db/m3/src/cluster/placement"
 	xerrors "github.com/m3db/m3/src/x/errors"
@@ -34,12 +33,6 @@ import (
 
 var (
 	errInstanceWriterManagerClosed = errors.New("instance writer manager closed")
-)
-
-const (
-	_queueMetricReportInterval = 10 * time.Second
-	_queueMetricBuckets        = 8
-	_queueMetricBucketStart    = 64
 )
 
 // instanceWriterManager manages instance writers.
@@ -67,15 +60,9 @@ type instanceWriterManager interface {
 type writerManagerMetrics struct {
 	instancesAdded   tally.Counter
 	instancesRemoved tally.Counter
-	queueLen         tally.Histogram
 }
 
 func newWriterManagerMetrics(scope tally.Scope) writerManagerMetrics {
-	buckets := append(
-		tally.ValueBuckets{0},
-		tally.MustMakeExponentialValueBuckets(_queueMetricBucketStart, 2, _queueMetricBuckets)...,
-	)
-
 	return writerManagerMetrics{
 		instancesAdded: scope.Tagged(map[string]string{
 			"action": "add",
@@ -83,14 +70,12 @@ func newWriterManagerMetrics(scope tally.Scope) writerManagerMetrics {
 		instancesRemoved: scope.Tagged(map[string]string{
 			"action": "remove",
 		}).Counter("instances"),
-		queueLen: scope.Histogram("queue-length", buckets),
 	}
 }
 
 type writerManager struct {
 	sync.RWMutex
-	wg      sync.WaitGroup
-	doneCh  chan struct{}
+
 	opts    Options
 	writers map[string]*refCountedWriter
 	closed  bool
@@ -98,15 +83,11 @@ type writerManager struct {
 }
 
 func newInstanceWriterManager(opts Options) instanceWriterManager {
-	wm := &writerManager{
+	return &writerManager{
 		opts:    opts,
 		writers: make(map[string]*refCountedWriter),
 		metrics: newWriterManagerMetrics(opts.InstrumentOptions().MetricsScope()),
-		doneCh:  make(chan struct{}),
 	}
-	wm.wg.Add(1)
-	go wm.reportMetricsLoop()
-	return wm
 }
 
 func (mgr *writerManager) AddInstances(instances []placement.Instance) error {
@@ -192,45 +173,14 @@ func (mgr *writerManager) Flush() error {
 
 func (mgr *writerManager) Close() error {
 	mgr.Lock()
+	defer mgr.Unlock()
 
 	if mgr.closed {
-		mgr.Unlock()
 		return errInstanceWriterManagerClosed
 	}
-
 	mgr.closed = true
 	for _, writer := range mgr.writers {
 		writer.Close()
 	}
-
-	close(mgr.doneCh)
-	mgr.Unlock()
-	mgr.wg.Wait()
-
 	return nil
-}
-
-func (mgr *writerManager) reportMetricsLoop() {
-	defer mgr.wg.Done()
-
-	ticker := time.NewTicker(_queueMetricReportInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-mgr.doneCh:
-			return
-		case <-ticker.C:
-			mgr.reportMetrics()
-		}
-	}
-}
-
-func (mgr *writerManager) reportMetrics() {
-	mgr.RLock()
-	defer mgr.RUnlock()
-
-	for _, writer := range mgr.writers {
-		mgr.metrics.queueLen.RecordValue(float64(writer.QueueSize()))
-	}
 }

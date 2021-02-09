@@ -22,7 +22,6 @@ package server
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"os/signal"
 	"syscall"
@@ -64,7 +63,10 @@ func Run(opts RunOptions) {
 	// Create logger and metrics scope.
 	logger, err := cfg.Logging.BuildLogger()
 	if err != nil {
-		log.Fatalf("error creating logger: %v", err)
+		// NB(r): Use fmt.Fprintf(os.Stderr, ...) to avoid etcd.SetGlobals()
+		// sending stdlib "log" to black hole. Don't remove unless with good reason.
+		fmt.Fprintf(os.Stderr, "error creating logger: %v\n", err)
+		os.Exit(1)
 	}
 	defer logger.Sync()
 

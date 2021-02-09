@@ -23,5 +23,3 @@ query:
         value: hidden
     strip:
     - restricted_metrics_type
-
-lookbackDuration: 10m

@@ -23,7 +23,6 @@ package client
 import (
 	"time"
 
-	"github.com/m3db/m3/src/cluster/shard"
 	"github.com/m3db/m3/src/dbnode/encoding"
 	"github.com/m3db/m3/src/dbnode/generated/thrift/rpc"
 	"github.com/m3db/m3/src/dbnode/namespace"
@@ -43,7 +42,7 @@ import (
 	xsync "github.com/m3db/m3/src/x/sync"
 	xtime "github.com/m3db/m3/src/x/time"
 
-	"github.com/uber/tchannel-go"
+	tchannel "github.com/uber/tchannel-go"
 )
 
 // Client can create sessions to write and read to a cluster.
@@ -63,12 +62,6 @@ type Client interface {
 
 // Session can write and read to a cluster.
 type Session interface {
-	// WriteClusterAvailability returns whether cluster is available for writes.
-	WriteClusterAvailability() (bool, error)
-
-	// ReadClusterAvailability returns whether cluster is available for reads.
-	ReadClusterAvailability() (bool, error)
-
 	// Write value to the database for an ID.
 	Write(namespace, id ident.ID, t time.Time, value float64, unit xtime.Unit, annotation []byte) error
 
@@ -246,42 +239,6 @@ type AdminSession interface {
 		metadatas []block.ReplicaMetadata,
 		opts result.Options,
 	) (PeerBlocksIter, error)
-
-	// BorrowConnections will borrow connection for hosts belonging to a shard.
-	BorrowConnections(
-		shardID uint32,
-		fn WithBorrowConnectionFn,
-		opts BorrowConnectionOptions,
-	) (BorrowConnectionsResult, error)
-}
-
-// BorrowConnectionOptions are options to use when borrowing a connection
-type BorrowConnectionOptions struct {
-	// ContinueOnBorrowError allows skipping hosts that cannot borrow
-	// a connection for.
-	ContinueOnBorrowError bool
-	// ExcludeOrigin will exclude attempting to borrow a connection for
-	// the origin host (i.e. the local host).
-	ExcludeOrigin bool
-}
-
-// BorrowConnectionsResult is a result used when borrowing connections.
-type BorrowConnectionsResult struct {
-	Borrowed int
-}
-
-// WithBorrowConnectionFn is used to do work with a borrowed connection.
-type WithBorrowConnectionFn func(
-	shard shard.Shard,
-	host topology.Host,
-	client rpc.TChanNode,
-	channel PooledChannel,
-) (WithBorrowConnectionResult, error)
-
-// WithBorrowConnectionResult is returned from a borrow connection function.
-type WithBorrowConnectionResult struct {
-	// Break will break the iteration.
-	Break bool
 }
 
 // Options is a set of client options.
@@ -731,14 +688,13 @@ type hostQueue interface {
 	ConnectionPool() connectionPool
 
 	// BorrowConnection will borrow a connection and execute a user function.
-	BorrowConnection(fn WithConnectionFn) error
+	BorrowConnection(fn withConnectionFn) error
 
 	// Close the host queue, will flush any operations still pending.
 	Close()
 }
 
-// WithConnectionFn is a callback for a connection to a host.
-type WithConnectionFn func(client rpc.TChanNode, ch PooledChannel)
+type withConnectionFn func(c rpc.TChanNode)
 
 type connectionPool interface {
 	// Open starts the connection pool connecting and health checking.
@@ -748,7 +704,7 @@ type connectionPool interface {
 	ConnectionCount() int
 
 	// NextClient gets the next client for use by the connection pool.
-	NextClient() (rpc.TChanNode, PooledChannel, error)
+	NextClient() (rpc.TChanNode, error)
 
 	// Close the connection pool.
 	Close()
@@ -756,7 +712,7 @@ type connectionPool interface {
 
 type peerSource interface {
 	// BorrowConnection will borrow a connection and execute a user function.
-	BorrowConnection(hostID string, fn WithConnectionFn) error
+	BorrowConnection(hostID string, fn withConnectionFn) error
 }
 
 type peer interface {
@@ -764,7 +720,7 @@ type peer interface {
 	Host() topology.Host
 
 	// BorrowConnection will borrow a connection and execute a user function.
-	BorrowConnection(fn WithConnectionFn) error
+	BorrowConnection(fn withConnectionFn) error
 }
 
 type status int

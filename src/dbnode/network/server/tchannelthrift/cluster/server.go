@@ -50,6 +50,11 @@ func NewServer(
 	contextPool context.Pool,
 	opts *tchannel.ChannelOptions,
 ) ns.NetworkService {
+	// Make the opts immutable on the way in
+	if opts != nil {
+		immutableOpts := *opts
+		opts = &immutableOpts
+	}
 	return &server{
 		address:     address,
 		client:      client,
@@ -59,14 +64,7 @@ func NewServer(
 }
 
 func (s *server) ListenAndServe() (ns.Close, error) {
-	// NB(r): Keep ref to a local channel options since it's actually modified
-	// by TChannel itself to set defaults.
-	var opts *tchannel.ChannelOptions
-	if s.opts != nil {
-		immutableOpts := *s.opts
-		opts = &immutableOpts
-	}
-	channel, err := tchannel.NewChannel(ChannelName, opts)
+	channel, err := tchannel.NewChannel(ChannelName, s.opts)
 	if err != nil {
 		return nil, err
 	}

@@ -29,10 +29,8 @@ import (
 	"github.com/m3db/m3/src/dbnode/namespace"
 	m3dberrors "github.com/m3db/m3/src/dbnode/storage/errors"
 	"github.com/m3db/m3/src/dbnode/storage/index"
-	idxconvert "github.com/m3db/m3/src/dbnode/storage/index/convert"
 	"github.com/m3db/m3/src/m3ninx/doc"
 	m3ninxidx "github.com/m3db/m3/src/m3ninx/idx"
-	"github.com/m3db/m3/src/m3ninx/index/segment/fst/encoding/docs"
 	"github.com/m3db/m3/src/x/clock"
 	"github.com/m3db/m3/src/x/context"
 	"github.com/m3db/m3/src/x/ident"
@@ -226,7 +224,7 @@ func TestNamespaceIndexInsertOlderThanRetentionPeriod(t *testing.T) {
 	batch.ForEach(func(
 		idx int,
 		entry index.WriteBatchEntry,
-		doc doc.Metadata,
+		doc doc.Document,
 		result index.WriteBatchEntryResult,
 	) {
 		verified++
@@ -246,7 +244,7 @@ func TestNamespaceIndexInsertOlderThanRetentionPeriod(t *testing.T) {
 	batch.ForEach(func(
 		idx int,
 		entry index.WriteBatchEntry,
-		doc doc.Metadata,
+		doc doc.Document,
 		result index.WriteBatchEntryResult,
 	) {
 		verified++
@@ -349,12 +347,7 @@ func TestNamespaceIndexInsertQuery(t *testing.T) {
 	results := res.Results
 	assert.Equal(t, "testns1", results.Namespace().String())
 
-	reader := docs.NewEncodedDocumentReader()
-	d, ok := results.Map().Get(ident.BytesID("foo"))
-	md, err := docs.MetadataFromDocument(d, reader)
-	require.NoError(t, err)
-	tags := idxconvert.ToSeriesTags(md, idxconvert.Opts{NoClone: true})
-
+	tags, ok := results.Map().Get(ident.StringID("foo"))
 	assert.True(t, ok)
 	assert.True(t, ident.NewTagIterMatcher(
 		ident.MustNewTagStringsIterator("name", "value")).Matches(
@@ -402,7 +395,7 @@ func TestNamespaceIndexInsertAggregateQuery(t *testing.T) {
 func TestNamespaceIndexInsertWideQuery(t *testing.T) {
 	ctrl := xtest.NewController(t)
 	defer ctrl.Finish()
-	defer leaktest.CheckTimeout(t, 5*time.Second)()
+	defer leaktest.CheckTimeout(t, 2*time.Second)()
 
 	ctx := context.NewContext()
 	defer ctx.Close()
@@ -415,18 +408,17 @@ func TestNamespaceIndexInsertWideQuery(t *testing.T) {
 	assert.NoError(t, err)
 	doneCh := make(chan struct{})
 	collector := make(chan *ident.IDBatch)
-	blockSize := 2 * time.Hour
-	queryOpts, err := index.NewWideQueryOptions(time.Now().Truncate(blockSize),
-		5, blockSize, nil, index.IterationOptions{})
+	queryOpts, err := index.NewWideQueryOptions(time.Now(), 5,
+		time.Hour*2, nil, index.IterationOptions{})
 	require.NoError(t, err)
 
 	expectedBatchIDs := [][]string{{"foo"}}
 	go func() {
 		i := 0
 		for b := range collector {
-			batchStr := make([]string, 0, len(b.ShardIDs))
-			for _, shardIDs := range b.ShardIDs {
-				batchStr = append(batchStr, shardIDs.ID.String())
+			batchStr := make([]string, 0, len(b.IDs))
+			for _, id := range b.IDs {
+				batchStr = append(batchStr, id.String())
 			}
 
 			withinIndex := i < len(expectedBatchIDs)
@@ -449,7 +441,7 @@ func TestNamespaceIndexInsertWideQuery(t *testing.T) {
 func TestNamespaceIndexInsertWideQueryFilteredByShard(t *testing.T) {
 	ctrl := xtest.NewController(t)
 	defer ctrl.Finish()
-	defer leaktest.CheckTimeout(t, 5*time.Second)()
+	defer leaktest.CheckTimeout(t, 2*time.Second)()
 
 	ctx := context.NewContext()
 	defer ctx.Close()
@@ -464,16 +456,15 @@ func TestNamespaceIndexInsertWideQueryFilteredByShard(t *testing.T) {
 	collector := make(chan *ident.IDBatch)
 	shard := testShardSet.Lookup(ident.StringID("foo"))
 	offShard := shard + 1
-	blockSize := 2 * time.Hour
-	queryOpts, err := index.NewWideQueryOptions(time.Now().Truncate(blockSize),
-		5, blockSize, []uint32{offShard}, index.IterationOptions{})
+	queryOpts, err := index.NewWideQueryOptions(time.Now(), 5, time.Hour*2,
+		[]uint32{offShard}, index.IterationOptions{})
 	require.NoError(t, err)
 
 	go func() {
 		i := 0
 		for b := range collector {
-			assert.Equal(t, 0, len(b.ShardIDs))
 			b.Processed()
+			fmt.Println(b.IDs)
 			i++
 		}
 		assert.Equal(t, 0, i)

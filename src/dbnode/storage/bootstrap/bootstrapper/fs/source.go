@@ -21,7 +21,6 @@
 package fs
 
 import (
-	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -84,9 +83,8 @@ type fileSystemSource struct {
 }
 
 type fileSystemSourceMetrics struct {
-	persistedIndexBlocksRead           tally.Counter
-	persistedIndexBlocksWrite          tally.Counter
-	persistedIndexBlocksOutOfRetention tally.Counter
+	persistedIndexBlocksRead  tally.Counter
+	persistedIndexBlocksWrite tally.Counter
 }
 
 func newFileSystemSource(opts Options) (bootstrap.Source, error) {
@@ -107,9 +105,8 @@ func newFileSystemSource(opts Options) (bootstrap.Source, error) {
 		idPool:      opts.IdentifierPool(),
 		newReaderFn: fs.NewReader,
 		metrics: fileSystemSourceMetrics{
-			persistedIndexBlocksRead:           scope.Counter("persist-index-blocks-read"),
-			persistedIndexBlocksWrite:          scope.Counter("persist-index-blocks-write"),
-			persistedIndexBlocksOutOfRetention: scope.Counter("persist-index-blocks-out-of-retention"),
+			persistedIndexBlocksRead:  scope.Counter("persist-index-blocks-read"),
+			persistedIndexBlocksWrite: scope.Counter("persist-index-blocks-write"),
 		},
 	}
 	s.newReaderPoolOpts.Alloc = s.newReader
@@ -401,27 +398,16 @@ func (s *fileSystemSource) loadShardReadersDataIntoShardResult(
 		seriesCachePolicy    = ropts.SeriesCachePolicy()
 		timesWithErrors      []time.Time
 		nsCtx                = namespace.NewContextFrom(ns)
-		metadataPool         = s.opts.IndexOptions().MetadataArrayPool()
-		batch                = metadataPool.Get()
+		docsPool             = s.opts.IndexOptions().DocumentArrayPool()
+		batch                = docsPool.Get()
 		totalEntries         int
 		totalFulfilledRanges = result.NewShardTimeRanges()
 	)
-	defer metadataPool.Put(batch)
+	defer docsPool.Put(batch)
 
 	requestedRanges := timeWindowReaders.Ranges
 	remainingRanges := requestedRanges.Copy()
 	shardReaders := timeWindowReaders.Readers
-	defer func() {
-		// Return readers to pool.
-		for _, shardReaders := range shardReaders {
-			for _, r := range shardReaders.Readers {
-				if err := r.Close(); err == nil {
-					readerPool.Put(r)
-				}
-			}
-		}
-	}()
-
 	for shard, shardReaders := range shardReaders {
 		shard := uint32(shard)
 		readers := shardReaders.Readers
@@ -604,14 +590,7 @@ func (s *fileSystemSource) loadShardReadersDataIntoShardResult(
 				blockStart,
 				blockEnd,
 			)
-			if errors.Is(err, fs.ErrOutOfRetentionClaim) {
-				// Bail early if the index segment is already out of retention.
-				// This can happen when the edge of requested ranges at time of data bootstrap
-				// is now out of retention.
-				s.log.Debug("skipping out of retention index segment", buildIndexLogFields...)
-				s.metrics.persistedIndexBlocksOutOfRetention.Inc(1)
-				return
-			} else if err != nil {
+			if err != nil {
 				instrument.EmitAndLogInvariantViolation(iopts, func(l *zap.Logger) {
 					l.Error("persist fs index bootstrap failed",
 						zap.Error(err),
@@ -656,6 +635,15 @@ func (s *fileSystemSource) loadShardReadersDataIntoShardResult(
 		runResult.Lock()
 		runResult.index.IndexResults()[xtime.ToUnixNano(blockStart)].SetBlock(idxpersist.DefaultIndexVolumeType, result.NewIndexBlock(segments, newFulfilled))
 		runResult.Unlock()
+	}
+
+	// Return readers to pool.
+	for _, shardReaders := range shardReaders {
+		for _, r := range shardReaders.Readers {
+			if err := r.Close(); err == nil {
+				readerPool.Put(r)
+			}
+		}
 	}
 
 	s.markRunResultErrorsAndUnfulfilled(runResult, requestedRanges,
@@ -721,9 +709,9 @@ func (s *fileSystemSource) readNextEntryAndRecordBlock(
 
 func (s *fileSystemSource) readNextEntryAndMaybeIndex(
 	r fs.DataFileSetReader,
-	batch []doc.Metadata,
+	batch []doc.Document,
 	builder *result.IndexBuilder,
-) ([]doc.Metadata, error) {
+) ([]doc.Document, error) {
 	// If performing index run, then simply read the metadata and add to segment.
 	id, tagsIter, _, _, err := r.ReadMetadata()
 	if err != nil {
@@ -740,7 +728,7 @@ func (s *fileSystemSource) readNextEntryAndMaybeIndex(
 
 	batch = append(batch, d)
 
-	if len(batch) >= index.MetadataArrayPoolCapacity {
+	if len(batch) >= index.DocumentArrayPoolCapacity {
 		return builder.FlushBatch(batch)
 	}
 
@@ -857,8 +845,8 @@ func (s *fileSystemSource) read(
 		builder := result.NewIndexBuilder(segBuilder)
 
 		indexOpts := s.opts.IndexOptions()
-		compactor, err := compaction.NewCompactor(indexOpts.MetadataArrayPool(),
-			index.MetadataArrayPoolCapacity,
+		compactor, err := compaction.NewCompactor(indexOpts.DocumentArrayPool(),
+			index.DocumentArrayPoolCapacity,
 			indexOpts.SegmentBuilderOptions(),
 			indexOpts.FSTSegmentOptions(),
 			compaction.CompactorOptions{

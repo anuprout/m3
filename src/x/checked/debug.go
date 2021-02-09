@@ -23,7 +23,6 @@ package checked
 import (
 	"bytes"
 	"fmt"
-	"os"
 	"runtime"
 	"sync"
 	"time"
@@ -315,8 +314,4 @@ func tracebackEvent(c *RefCount, ref int, e debuggerEvent) {
 
 func init() {
 	leaks.m = make(map[string]uint64)
-
-	if os.Getenv("DEBUG_ENABLE_TRACEBACKS") == "true" {
-		EnableTracebacks()
-	}
 }

@@ -25,8 +25,8 @@ import "sync/atomic"
 type destructorFn func()
 
 type refCount struct {
-	destructorFn destructorFn
 	n            int32
+	destructorFn destructorFn
 }
 
 func (rc *refCount) SetRefCount(n int)             { atomic.StoreInt32(&rc.n, int32(n)) }

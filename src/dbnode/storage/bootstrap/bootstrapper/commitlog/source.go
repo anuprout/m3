@@ -43,6 +43,7 @@ import (
 	"github.com/m3db/m3/src/x/context"
 	"github.com/m3db/m3/src/x/ident"
 	"github.com/m3db/m3/src/x/instrument"
+	"github.com/m3db/m3/src/x/pool"
 	xtime "github.com/m3db/m3/src/x/time"
 
 	"github.com/opentracing/opentracing-go"
@@ -57,6 +58,7 @@ const (
 type newIteratorFn func(opts commitlog.IteratorOpts) (
 	iter commitlog.Iterator, corruptFiles []commitlog.ErrorWithPath, err error)
 type snapshotFilesFn func(filePathPrefix string, namespace ident.ID, shard uint32) (fs.FileSetFilesSlice, error)
+type newReaderFn func(bytesPool pool.CheckedBytesPool, opts fs.Options) (fs.DataFileSetReader, error)
 
 type commitLogSource struct {
 	opts  Options
@@ -68,7 +70,7 @@ type commitLogSource struct {
 
 	newIteratorFn   newIteratorFn
 	snapshotFilesFn snapshotFilesFn
-	newReaderFn     fs.NewReaderFn
+	newReaderFn     newReaderFn
 
 	metrics commitLogSourceMetrics
 	// Cache the results of reading the commit log between passes. The commit log is not sharded by time range, so the

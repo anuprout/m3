@@ -45,14 +45,14 @@ func genDoc(strs ...string) doc.Document {
 		}
 	}
 
-	return doc.NewDocumentFromMetadata(doc.Metadata{Fields: fields})
+	return doc.Document{Fields: fields}
 }
 
 func TestAggResultsInsertInvalid(t *testing.T) {
 	res := NewAggregateResults(nil, AggregateResultsOptions{}, testOpts)
 	assert.True(t, res.EnforceLimits())
 
-	dInvalid := doc.NewDocumentFromMetadata(doc.Metadata{Fields: []doc.Field{{}}})
+	dInvalid := doc.Document{Fields: []doc.Field{{}}}
 	size, docsCount, err := res.AddDocuments([]doc.Document{dInvalid})
 	require.Error(t, err)
 	require.Equal(t, 0, size)
@@ -100,7 +100,7 @@ func TestAggResultsTermOnlyInsert(t *testing.T) {
 	res := NewAggregateResults(nil, AggregateResultsOptions{
 		Type: AggregateTagNames,
 	}, testOpts)
-	dInvalid := doc.NewDocumentFromMetadata(doc.Metadata{Fields: []doc.Field{{}}})
+	dInvalid := doc.Document{Fields: []doc.Field{{}}}
 	size, docsCount, err := res.AddDocuments([]doc.Document{dInvalid})
 	require.Error(t, err)
 	require.Equal(t, 0, size)
@@ -376,11 +376,8 @@ func TestAggResultsMergeNameOnly(t *testing.T) {
 func TestAggResultsInsertCopies(t *testing.T) {
 	res := NewAggregateResults(nil, AggregateResultsOptions{}, testOpts)
 	dValid := genDoc("foo", "bar")
-
-	d, ok := dValid.Metadata()
-	require.True(t, ok)
-	name := d.Fields[0].Name
-	value := d.Fields[0].Value
+	name := dValid.Fields[0].Name
+	value := dValid.Fields[0].Value
 	size, docsCount, err := res.AddDocuments([]doc.Document{dValid})
 	require.NoError(t, err)
 	require.Equal(t, 1, size)
@@ -422,9 +419,7 @@ func TestAggResultsNameOnlyInsertCopies(t *testing.T) {
 		Type: AggregateTagNames,
 	}, testOpts)
 	dValid := genDoc("foo", "bar")
-	d, ok := dValid.Metadata()
-	require.True(t, ok)
-	name := d.Fields[0].Name
+	name := dValid.Fields[0].Name
 	size, docsCount, err := res.AddDocuments([]doc.Document{dValid})
 	require.NoError(t, err)
 	require.Equal(t, 1, size)

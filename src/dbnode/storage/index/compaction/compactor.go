@@ -47,7 +47,7 @@ type Compactor struct {
 
 	opts         CompactorOptions
 	writer       fst.Writer
-	metadataPool doc.MetadataArrayPool
+	docsPool     doc.DocumentArrayPool
 	docsMaxBatch int
 	fstOpts      fst.Options
 	builder      segment.SegmentsBuilder
@@ -71,7 +71,7 @@ type CompactorOptions struct {
 // NewCompactor returns a new compactor which reuses buffers
 // to avoid allocating intermediate buffers when compacting.
 func NewCompactor(
-	metadataPool doc.MetadataArrayPool,
+	docsPool doc.DocumentArrayPool,
 	docsMaxBatch int,
 	builderOpts builder.Options,
 	fstOpts fst.Options,
@@ -88,7 +88,7 @@ func NewCompactor(
 	return &Compactor{
 		opts:         opts,
 		writer:       writer,
-		metadataPool: metadataPool,
+		docsPool:     docsPool,
 		docsMaxBatch: docsMaxBatch,
 		builder:      builder.NewBuilderFromSegments(builderOpts),
 		fstOpts:      fstOpts,
@@ -147,9 +147,9 @@ func (c *Compactor) CompactUsingBuilder(
 	}
 
 	// Need to combine segments first
-	batch := c.metadataPool.Get()
+	batch := c.docsPool.Get()
 	defer func() {
-		c.metadataPool.Put(batch)
+		c.docsPool.Put(batch)
 	}()
 
 	// flushBatch is declared to reuse the same code from the
@@ -179,7 +179,7 @@ func (c *Compactor) CompactUsingBuilder(
 		}
 
 		// Reset docs batch for reuse
-		var empty doc.Metadata
+		var empty doc.Document
 		for i := range batch {
 			batch[i] = empty
 		}
@@ -273,7 +273,7 @@ func (c *Compactor) compactFromBuilderWithLock(
 		// If retaining references to the original docs, simply take ownership
 		// of the documents and then reference them directly from the FST segment
 		// rather than encoding them and mmap'ing the encoded documents.
-		allDocsCopy := make([]doc.Metadata, len(allDocs))
+		allDocsCopy := make([]doc.Document, len(allDocs))
 		copy(allDocsCopy, allDocs)
 		fstData.DocsReader = docs.NewSliceReader(allDocsCopy)
 	} else {
@@ -374,7 +374,7 @@ func (c *Compactor) Close() error {
 	c.closed = true
 
 	c.writer = nil
-	c.metadataPool = nil
+	c.docsPool = nil
 	c.fstOpts = nil
 	c.builder = nil
 	c.buff = nil

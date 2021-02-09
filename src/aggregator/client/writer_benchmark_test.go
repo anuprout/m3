@@ -150,7 +150,6 @@ type testNoOpQueue struct{}
 
 func (q testNoOpQueue) Enqueue(protobuf.Buffer) error { return nil }
 func (q testNoOpQueue) Close() error                  { return nil }
-func (q testNoOpQueue) Size() int                     { return 0 }
 
 type testSerialWriter struct {
 	*writer

@@ -24,45 +24,37 @@ import (
 	"fmt"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/m3db/m3/src/query/block"
-	"github.com/m3db/m3/src/query/storage"
 	"github.com/m3db/m3/src/x/headers"
 
 	"github.com/stretchr/testify/assert"
 )
 
-func TestAddResponseHeaders(t *testing.T) {
+func TestAddWarningHeaders(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	meta := block.NewResultMetadata()
-	AddResponseHeaders(recorder, meta, nil)
+	AddWarningHeaders(recorder, meta)
 	assert.Equal(t, 0, len(recorder.Header()))
 
 	recorder = httptest.NewRecorder()
 	meta.Exhaustive = false
 	ex := headers.LimitHeaderSeriesLimitApplied
-	AddResponseHeaders(recorder, meta, nil)
+	AddWarningHeaders(recorder, meta)
 	assert.Equal(t, 1, len(recorder.Header()))
 	assert.Equal(t, ex, recorder.Header().Get(headers.LimitHeader))
 
 	recorder = httptest.NewRecorder()
 	meta.AddWarning("foo", "bar")
 	ex = fmt.Sprintf("%s,%s_%s", headers.LimitHeaderSeriesLimitApplied, "foo", "bar")
-	AddResponseHeaders(recorder, meta, nil)
+	AddWarningHeaders(recorder, meta)
 	assert.Equal(t, 1, len(recorder.Header()))
 	assert.Equal(t, ex, recorder.Header().Get(headers.LimitHeader))
 
 	recorder = httptest.NewRecorder()
 	meta.Exhaustive = true
 	ex = "foo_bar"
-	AddResponseHeaders(recorder, meta, nil)
+	AddWarningHeaders(recorder, meta)
 	assert.Equal(t, 1, len(recorder.Header()))
 	assert.Equal(t, ex, recorder.Header().Get(headers.LimitHeader))
-
-	recorder = httptest.NewRecorder()
-	meta = block.NewResultMetadata()
-	AddResponseHeaders(recorder, meta, &storage.FetchOptions{Timeout: 5 * time.Second})
-	assert.Equal(t, 1, len(recorder.Header()))
-	assert.Equal(t, "5s", recorder.Header().Get(headers.TimeoutHeader))
 }

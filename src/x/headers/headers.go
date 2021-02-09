@@ -50,9 +50,6 @@ const (
 	// Valid values are "default" or "aggregate".
 	WriteTypeHeader = M3HeaderPrefix + "Write-Type"
 
-	// SourceHeader tracks bytes and docs read for the given source, if provided.
-	SourceHeader = M3HeaderPrefix + "Source"
-
 	// DefaultWriteType is the default write type.
 	DefaultWriteType = "default"
 
@@ -109,9 +106,6 @@ const (
 
 	// LimitHeader is the header added when returned series are limited.
 	LimitHeader = M3HeaderPrefix + "Results-Limited"
-
-	// TimeoutHeader is the header added with the effective timeout.
-	TimeoutHeader = M3HeaderPrefix + "Timeout"
 
 	// LimitHeaderSeriesLimitApplied is the header applied when fetch results
 	// are maxed.

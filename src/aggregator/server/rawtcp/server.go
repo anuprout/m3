@@ -24,6 +24,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"math/rand"
 	"net"
 	"sync"
 	"time"
@@ -31,6 +32,8 @@ import (
 	"github.com/m3db/m3/src/aggregator/aggregator"
 	"github.com/m3db/m3/src/aggregator/rate"
 	"github.com/m3db/m3/src/metrics/encoding"
+	"github.com/m3db/m3/src/metrics/encoding/migration"
+	"github.com/m3db/m3/src/metrics/encoding/msgpack"
 	"github.com/m3db/m3/src/metrics/encoding/protobuf"
 	"github.com/m3db/m3/src/metrics/metadata"
 	"github.com/m3db/m3/src/metrics/metric/aggregated"
@@ -38,7 +41,6 @@ import (
 	"github.com/m3db/m3/src/metrics/policy"
 	xio "github.com/m3db/m3/src/x/io"
 	xserver "github.com/m3db/m3/src/x/server"
-	xtime "github.com/m3db/m3/src/x/time"
 
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
@@ -86,9 +88,11 @@ type handler struct {
 	aggregator     aggregator.Aggregator
 	log            *zap.Logger
 	readBufferSize int
+	msgpackItOpts  msgpack.UnaggregatedIteratorOptions
 	protobufItOpts protobuf.UnaggregatedOptions
 
 	errLogRateLimiter *rate.Limiter
+	rand              *rand.Rand
 	metrics           handlerMetrics
 
 	opts Options
@@ -96,17 +100,20 @@ type handler struct {
 
 // NewHandler creates a new raw TCP handler.
 func NewHandler(aggregator aggregator.Aggregator, opts Options) xserver.Handler {
+	nowFn := opts.ClockOptions().NowFn()
 	iOpts := opts.InstrumentOptions()
 	var limiter *rate.Limiter
 	if rateLimit := opts.ErrorLogLimitPerSecond(); rateLimit != 0 {
-		limiter = rate.NewLimiter(rateLimit)
+		limiter = rate.NewLimiter(rateLimit, nowFn)
 	}
 	return &handler{
 		aggregator:        aggregator,
 		log:               iOpts.Logger(),
 		readBufferSize:    opts.ReadBufferSize(),
+		msgpackItOpts:     opts.MsgpackUnaggregatedIteratorOptions(),
 		protobufItOpts:    opts.ProtobufUnaggregatedIteratorOptions(),
 		errLogRateLimiter: limiter,
+		rand:              rand.New(rand.NewSource(nowFn().UnixNano())),
 		metrics:           newHandlerMetrics(iOpts.MetricsScope()),
 		opts:              opts,
 	}
@@ -118,11 +125,10 @@ func (s *handler) Handle(conn net.Conn) {
 		remoteAddress = remoteAddr.String()
 	}
 
-	nowFn := s.opts.ClockOptions().NowFn()
 	rOpts := xio.ResettableReaderOptions{ReadBufferSize: s.readBufferSize}
 	read := s.opts.RWOptions().ResettableReaderFn()(conn, rOpts)
 	reader := bufio.NewReaderSize(read, s.readBufferSize)
-	it := protobuf.NewUnaggregatedIterator(reader, s.protobufItOpts)
+	it := migration.NewUnaggregatedIterator(reader, s.msgpackItOpts, s.protobufItOpts)
 	defer it.Close()
 
 	// Iterate over the incoming metrics stream and queue up metrics.
@@ -178,7 +184,7 @@ func (s *handler) Handle(conn net.Conn) {
 
 		// We rate limit the error log here because the error rate may scale with
 		// the metrics incoming rate and consume lots of cpu cycles.
-		if s.errLogRateLimiter != nil && !s.errLogRateLimiter.IsAllowed(1, xtime.ToUnixNano(nowFn())) {
+		if s.errLogRateLimiter != nil && !s.errLogRateLimiter.IsAllowed(1) {
 			s.metrics.errLogRateLimited.Inc(1)
 			continue
 		}

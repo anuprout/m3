@@ -781,7 +781,8 @@ func (mu metricUnion) ID() metricid.RawID {
 type metadataType int
 
 const (
-	stagedMetadatasType metadataType = iota
+	policiesListType metadataType = iota
+	stagedMetadatasType
 	forwardMetadataType
 	timedMetadataType
 	passthroughMetadataType
@@ -791,6 +792,7 @@ type metadataFn func(idx int) metadataUnion
 
 type metadataUnion struct {
 	mType               metadataType
+	policiesList        policy.PoliciesList
 	stagedMetadatas     metadata.StagedMetadatas
 	forwardMetadata     metadata.ForwardMetadata
 	timedMetadata       metadata.TimedMetadata
@@ -802,6 +804,8 @@ func (mu metadataUnion) expectedAggregationKeys(
 	defaultStoragePolicies []policy.StoragePolicy,
 ) (aggregationKeys, error) {
 	switch mu.mType {
+	case policiesListType:
+		return computeExpectedAggregationKeysFromPoliciesList(now, mu.policiesList, defaultStoragePolicies)
 	case stagedMetadatasType:
 		return computeExpectedAggregationKeysFromStagedMetadatas(now, mu.stagedMetadatas, defaultStoragePolicies)
 	case forwardMetadataType:

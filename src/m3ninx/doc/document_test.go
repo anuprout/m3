@@ -98,14 +98,14 @@ func TestSortingFields(t *testing.T) {
 func TestDocumentGetField(t *testing.T) {
 	tests := []struct {
 		name        string
-		input       Metadata
+		input       Document
 		fieldName   []byte
 		expectedOk  bool
 		expectedVal []byte
 	}{
 		{
 			name: "get existing field",
-			input: Metadata{
+			input: Document{
 				Fields: []Field{
 					Field{
 						Name:  []byte("apple"),
@@ -119,7 +119,7 @@ func TestDocumentGetField(t *testing.T) {
 		},
 		{
 			name: "get nonexisting field",
-			input: Metadata{
+			input: Document{
 				Fields: []Field{
 					Field{
 						Name:  []byte("apple"),
@@ -148,18 +148,18 @@ func TestDocumentGetField(t *testing.T) {
 func TestDocumentCompare(t *testing.T) {
 	tests := []struct {
 		name     string
-		l, r     Metadata
+		l, r     Document
 		expected int
 	}{
 		{
 			name:     "empty documents are equal",
-			l:        Metadata{},
-			r:        Metadata{},
+			l:        Document{},
+			r:        Document{},
 			expected: 0,
 		},
 		{
 			name: "documents with the same id and the same fields in the same order are equal",
-			l: Metadata{
+			l: Document{
 				ID: []byte("831992"),
 				Fields: []Field{
 					Field{
@@ -172,7 +172,7 @@ func TestDocumentCompare(t *testing.T) {
 					},
 				},
 			},
-			r: Metadata{
+			r: Document{
 				ID: []byte("831992"),
 				Fields: []Field{
 					Field{
@@ -189,7 +189,7 @@ func TestDocumentCompare(t *testing.T) {
 		},
 		{
 			name: "documents are ordered by their IDs",
-			l: Metadata{
+			l: Document{
 				ID: []byte("831992"),
 				Fields: []Field{
 					Field{
@@ -198,7 +198,7 @@ func TestDocumentCompare(t *testing.T) {
 					},
 				},
 			},
-			r: Metadata{
+			r: Document{
 				ID: []byte("831991"),
 				Fields: []Field{
 					Field{
@@ -211,7 +211,7 @@ func TestDocumentCompare(t *testing.T) {
 		},
 		{
 			name: "documents are ordered by their field names",
-			l: Metadata{
+			l: Document{
 				ID: []byte("831992"),
 				Fields: []Field{
 					Field{
@@ -220,7 +220,7 @@ func TestDocumentCompare(t *testing.T) {
 					},
 				},
 			},
-			r: Metadata{
+			r: Document{
 				ID: []byte("831992"),
 				Fields: []Field{
 					Field{
@@ -233,7 +233,7 @@ func TestDocumentCompare(t *testing.T) {
 		},
 		{
 			name: "documents are ordered by their field values",
-			l: Metadata{
+			l: Document{
 				ID: []byte("831992"),
 				Fields: []Field{
 					Field{
@@ -242,7 +242,7 @@ func TestDocumentCompare(t *testing.T) {
 					},
 				},
 			},
-			r: Metadata{
+			r: Document{
 				ID: []byte("831992"),
 				Fields: []Field{
 					Field{
@@ -255,7 +255,7 @@ func TestDocumentCompare(t *testing.T) {
 		},
 		{
 			name: "documents are ordered by their lengths",
-			l: Metadata{
+			l: Document{
 				ID: []byte("831992"),
 				Fields: []Field{
 					Field{
@@ -264,7 +264,7 @@ func TestDocumentCompare(t *testing.T) {
 					},
 				},
 			},
-			r: Metadata{
+			r: Document{
 				ID: []byte("831992"),
 				Fields: []Field{
 					Field{
@@ -290,18 +290,18 @@ func TestDocumentCompare(t *testing.T) {
 func TestDocumentEquality(t *testing.T) {
 	tests := []struct {
 		name     string
-		l, r     Metadata
+		l, r     Document
 		expected bool
 	}{
 		{
 			name:     "empty documents are equal",
-			l:        Metadata{},
-			r:        Metadata{},
+			l:        Document{},
+			r:        Document{},
 			expected: true,
 		},
 		{
 			name: "documents with the same fields in the same order are equal",
-			l: Metadata{
+			l: Document{
 				ID: []byte("831992"),
 				Fields: []Field{
 					Field{
@@ -314,7 +314,7 @@ func TestDocumentEquality(t *testing.T) {
 					},
 				},
 			},
-			r: Metadata{
+			r: Document{
 				ID: []byte("831992"),
 				Fields: []Field{
 					Field{
@@ -331,7 +331,7 @@ func TestDocumentEquality(t *testing.T) {
 		},
 		{
 			name: "documents with the same fields in different order are equal",
-			l: Metadata{
+			l: Document{
 				ID: []byte("831992"),
 				Fields: []Field{
 					Field{
@@ -344,7 +344,7 @@ func TestDocumentEquality(t *testing.T) {
 					},
 				},
 			},
-			r: Metadata{
+			r: Document{
 				ID: []byte("831992"),
 				Fields: []Field{
 					Field{
@@ -361,7 +361,7 @@ func TestDocumentEquality(t *testing.T) {
 		},
 		{
 			name: "documents with different fields are unequal",
-			l: Metadata{
+			l: Document{
 				ID: []byte("831992"),
 				Fields: []Field{
 					Field{
@@ -374,7 +374,7 @@ func TestDocumentEquality(t *testing.T) {
 					},
 				},
 			},
-			r: Metadata{
+			r: Document{
 				ID: []byte("831992"),
 				Fields: []Field{
 					Field{
@@ -391,7 +391,7 @@ func TestDocumentEquality(t *testing.T) {
 		},
 		{
 			name: "documents with different IDs are unequal",
-			l: Metadata{
+			l: Document{
 				ID: []byte("831992"),
 				Fields: []Field{
 					Field{
@@ -400,7 +400,7 @@ func TestDocumentEquality(t *testing.T) {
 					},
 				},
 			},
-			r: Metadata{
+			r: Document{
 				ID: []byte("080292"),
 				Fields: []Field{
 					Field{
@@ -423,24 +423,24 @@ func TestDocumentEquality(t *testing.T) {
 func TestDocumentValidation(t *testing.T) {
 	tests := []struct {
 		name        string
-		input       Metadata
+		input       Document
 		expectedErr bool
 	}{
 		{
 			name:        "empty document",
-			input:       Metadata{},
+			input:       Document{},
 			expectedErr: true,
 		},
 		{
 			name: "empty document w/ ID",
-			input: Metadata{
+			input: Document{
 				ID: []byte("foobar"),
 			},
 			expectedErr: false,
 		},
 		{
 			name: "invalid UTF-8 in field name",
-			input: Metadata{
+			input: Document{
 				Fields: []Field{
 					Field{
 						Name:  []byte("\xff"),
@@ -452,7 +452,7 @@ func TestDocumentValidation(t *testing.T) {
 		},
 		{
 			name: "invalid UTF-8 in field value",
-			input: Metadata{
+			input: Document{
 				Fields: []Field{
 					Field{
 						Name:  []byte("\xff"),
@@ -464,7 +464,7 @@ func TestDocumentValidation(t *testing.T) {
 		},
 		{
 			name: "document contains field with reserved field name",
-			input: Metadata{
+			input: Document{
 				Fields: []Field{
 					Field{
 						Name:  []byte("apple"),
@@ -480,7 +480,7 @@ func TestDocumentValidation(t *testing.T) {
 		},
 		{
 			name: "valid document",
-			input: Metadata{
+			input: Document{
 				Fields: []Field{
 					Field{
 						Name:  []byte("apple"),
@@ -507,26 +507,26 @@ func TestDocumentValidation(t *testing.T) {
 func TestDocumentHasID(t *testing.T) {
 	tests := []struct {
 		name     string
-		input    Metadata
+		input    Document
 		expected bool
 	}{
 		{
 			name: "nil ID",
-			input: Metadata{
+			input: Document{
 				ID: nil,
 			},
 			expected: false,
 		},
 		{
 			name: "zero-length ID",
-			input: Metadata{
+			input: Document{
 				ID: make([]byte, 0, 16),
 			},
 			expected: false,
 		},
 		{
 			name: "valid ID",
-			input: Metadata{
+			input: Document{
 				ID: []byte("831992"),
 			},
 			expected: true,
@@ -548,7 +548,7 @@ func TestSortingDocuments(t *testing.T) {
 		{
 			name: "unordered documents",
 			input: Documents{
-				Metadata{
+				Document{
 					ID: []byte("831992"),
 					Fields: []Field{
 						Field{
@@ -557,7 +557,7 @@ func TestSortingDocuments(t *testing.T) {
 						},
 					},
 				},
-				Metadata{
+				Document{
 					ID: []byte("831992"),
 					Fields: []Field{
 						Field{
@@ -568,7 +568,7 @@ func TestSortingDocuments(t *testing.T) {
 				},
 			},
 			expected: Documents{
-				Metadata{
+				Document{
 					ID: []byte("831992"),
 					Fields: []Field{
 						Field{
@@ -577,7 +577,7 @@ func TestSortingDocuments(t *testing.T) {
 						},
 					},
 				},
-				Metadata{
+				Document{
 					ID: []byte("831992"),
 					Fields: []Field{
 						Field{

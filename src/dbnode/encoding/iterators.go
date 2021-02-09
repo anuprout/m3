@@ -89,7 +89,7 @@ func (i *iterators) current() (ts.Datapoint, xtime.Unit, ts.Annotation) {
 			return freqA < freqB
 		})
 
-		// Reset reusable value frequencies
+		// Reset reuseable value frequencies
 		for key := range i.valueFrequencies {
 			delete(i.valueFrequencies, key)
 		}

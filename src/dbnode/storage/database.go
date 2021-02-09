@@ -30,6 +30,7 @@ import (
 
 	"github.com/m3db/m3/src/dbnode/namespace"
 	"github.com/m3db/m3/src/dbnode/persist/fs/commitlog"
+	"github.com/m3db/m3/src/dbnode/persist/fs/wide"
 	"github.com/m3db/m3/src/dbnode/sharding"
 	"github.com/m3db/m3/src/dbnode/storage/block"
 	dberrors "github.com/m3db/m3/src/dbnode/storage/errors"
@@ -927,12 +928,26 @@ func (d *db) ReadEncoded(
 		return nil, err
 	}
 
+	ctx, sp, sampled := ctx.StartSampledTraceSpan(tracepoint.DBReadEncoded)
+	if sampled {
+		sp.LogFields(
+			opentracinglog.String("namespace", namespace.String()),
+			opentracinglog.String("id", id.String()),
+			xopentracing.Time("start", start),
+			xopentracing.Time("end", end),
+		)
+	}
+
+	defer sp.Finish()
 	return n.ReadEncoded(ctx, id, start, end)
 }
 
-func (d *db) BatchProcessWideQuery(
+// batchProcessWideQuery runs the given query against the namespace index,
+// iterating in a batchwise fashion across all matching IDs, applying the given
+// IDBatchProcessor batch processing function to each ID discovered.
+func (d *db) batchProcessWideQuery(
 	ctx context.Context,
-	n Namespace,
+	n databaseNamespace,
 	query index.Query,
 	batchProcessor IDBatchProcessor,
 	opts index.WideQueryOptions,
@@ -979,7 +994,7 @@ func (d *db) WideQuery(
 	queryStart time.Time,
 	shards []uint32,
 	iterOpts index.IterationOptions,
-) ([]xio.WideEntry, error) { // nolint FIXME: change when exact type known.
+) ([]xio.IndexChecksum, error) { // FIXME: change when exact type known.
 	n, err := d.namespaceFor(namespace)
 	if err != nil {
 		d.metrics.unknownNamespaceRead.Inc(1)
@@ -990,7 +1005,7 @@ func (d *db) WideQuery(
 		batchSize = d.opts.WideBatchSize()
 		blockSize = n.Options().IndexOptions().BlockSize()
 
-		collectedChecksums = make([]xio.WideEntry, 0, 10)
+		collectedChecksums = make([]xio.IndexChecksum, 0, 10)
 	)
 
 	opts, err := index.NewWideQueryOptions(queryStart, batchSize, blockSize, shards, iterOpts)
@@ -1012,23 +1027,28 @@ func (d *db) WideQuery(
 
 	defer sp.Finish()
 
-	streamedWideEntries := make([]block.StreamedWideEntry, 0, batchSize)
+	streamedChecksums := make([]block.StreamedChecksum, 0, batchSize)
 	indexChecksumProcessor := func(batch *ident.IDBatch) error {
-		streamedWideEntries = streamedWideEntries[:0]
-
-		for _, shardID := range batch.ShardIDs {
-			streamedWideEntry, err := n.FetchWideEntry(ctx, shardID.ID, start, nil)
+		streamedChecksums = streamedChecksums[:0]
+		for _, id := range batch.IDs {
+			streamedChecksum, err := d.fetchIndexChecksum(ctx, n, id, start)
 			if err != nil {
 				return err
 			}
 
-			streamedWideEntries = append(streamedWideEntries, streamedWideEntry)
+			streamedChecksums = append(streamedChecksums, streamedChecksum)
 		}
 
-		for _, streamedWideEntry := range streamedWideEntries {
-			checksum, err := streamedWideEntry.RetrieveWideEntry()
+		for i, streamedChecksum := range streamedChecksums {
+			checksum, err := streamedChecksum.RetrieveIndexChecksum()
 			if err != nil {
 				return err
+			}
+
+			// TODO: use index checksum value to call downstreams.
+			useID := i == len(batch.IDs)-1
+			if !useID {
+				checksum.ID.Finalize()
 			}
 
 			collectedChecksums = append(collectedChecksums, checksum)
@@ -1037,12 +1057,124 @@ func (d *db) WideQuery(
 		return nil
 	}
 
-	err = d.BatchProcessWideQuery(ctx, n, query, indexChecksumProcessor, opts)
+	err = d.batchProcessWideQuery(ctx, n, query, indexChecksumProcessor, opts)
 	if err != nil {
 		return nil, err
 	}
 
 	return collectedChecksums, nil
+}
+
+func (d *db) fetchIndexChecksum(
+	ctx context.Context,
+	ns databaseNamespace,
+	id ident.ID,
+	start time.Time,
+) (block.StreamedChecksum, error) {
+	ctx, sp, sampled := ctx.StartSampledTraceSpan(tracepoint.DBIndexChecksum)
+	if sampled {
+		sp.LogFields(
+			opentracinglog.String("namespace", ns.ID().String()),
+			opentracinglog.String("id", id.String()),
+			xopentracing.Time("start", start),
+		)
+	}
+
+	defer sp.Finish()
+	return ns.FetchIndexChecksum(ctx, id, start)
+}
+
+func (d *db) ReadMismatches(
+	ctx context.Context,
+	namespace ident.ID,
+	query index.Query,
+	mismatchChecker wide.EntryChecksumMismatchChecker,
+	queryStart time.Time,
+	shards []uint32,
+	iterOpts index.IterationOptions,
+) ([]wide.ReadMismatch, error) { // TODO: update this type when reader hooked up
+	n, err := d.namespaceFor(namespace)
+	if err != nil {
+		d.metrics.unknownNamespaceRead.Inc(1)
+		return nil, err
+	}
+
+	var (
+		batchSize = d.opts.WideBatchSize()
+		blockSize = n.Options().IndexOptions().BlockSize()
+
+		collectedMismatches = make([]wide.ReadMismatch, 0, 10)
+	)
+
+	opts, err := index.NewWideQueryOptions(queryStart, batchSize, blockSize, shards, iterOpts)
+	if err != nil {
+		return nil, err
+	}
+
+	start, end := opts.StartInclusive, opts.EndExclusive
+	ctx, sp, sampled := ctx.StartSampledTraceSpan(tracepoint.DBReadMismatches)
+	if sampled {
+		sp.LogFields(
+			opentracinglog.String("readMismatches", query.String()),
+			opentracinglog.String("namespace", namespace.String()),
+			opentracinglog.Int("batchSize", batchSize),
+			xopentracing.Time("start", start),
+			xopentracing.Time("end", end),
+		)
+	}
+
+	defer sp.Finish()
+
+	streamedMismatches := make([]wide.StreamedMismatch, 0, batchSize)
+	streamMismatchProcessor := func(batch *ident.IDBatch) error {
+		streamedMismatches = streamedMismatches[:0]
+		for _, id := range batch.IDs {
+			streamedMismatch, err := d.fetchReadMismatch(ctx, n, mismatchChecker, id, start)
+			if err != nil {
+				return err
+			}
+
+			streamedMismatches = append(streamedMismatches, streamedMismatch)
+		}
+
+		for _, streamedMismatch := range streamedMismatches {
+			mismatch, err := streamedMismatch.RetrieveMismatch()
+			if err != nil {
+				return err
+			}
+
+			collectedMismatches = append(collectedMismatches, mismatch)
+		}
+
+		return nil
+	}
+
+	err = d.batchProcessWideQuery(ctx, n, query, streamMismatchProcessor, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	return collectedMismatches, nil
+}
+
+func (d *db) fetchReadMismatch(
+	ctx context.Context,
+	ns databaseNamespace,
+	mismatchChecker wide.EntryChecksumMismatchChecker,
+	id ident.ID,
+	start time.Time,
+) (wide.StreamedMismatch, error) {
+	ctx, sp, sampled := ctx.StartSampledTraceSpan(tracepoint.DBFetchMismatch)
+	if sampled {
+		sp.LogFields(
+			opentracinglog.String("namespace", ns.ID().String()),
+			opentracinglog.String("id", id.String()),
+			xopentracing.Time("start", start),
+		)
+	}
+
+	defer sp.Finish()
+	return ns.FetchReadMismatch(ctx, mismatchChecker, id, start)
 }
 
 func (d *db) FetchBlocks(
@@ -1279,7 +1411,7 @@ func (d *db) AggregateTiles(
 		return 0, err
 	}
 
-	processedTileCount, err := targetNs.AggregateTiles(ctx, sourceNs, opts)
+	processedTileCount, err := targetNs.AggregateTiles(sourceNs, opts)
 	if err != nil {
 		d.log.Error("error writing large tiles",
 			zap.String("sourceNs", sourceNsID.String()),

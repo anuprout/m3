@@ -51,20 +51,18 @@ import (
  */
 
 var (
-	// ByteOrder is the byte order used for encoding tags into a byte sequence.
-	ByteOrder        binary.ByteOrder = binary.LittleEndian
+	byteOrder        binary.ByteOrder = binary.LittleEndian
 	headerMagicBytes                  = make([]byte, 2)
 )
 
 func init() {
-	encodeUInt16(HeaderMagicNumber, headerMagicBytes)
+	encodeUInt16(headerMagicNumber, headerMagicBytes)
 }
 
 var (
-	errTagEncoderInUse   = errors.New("encoder already in use")
-	errTagLiteralTooLong = errors.New("literal is too long")
-	// ErrEmptyTagNameLiteral is an error when encoded tag name is empty.
-	ErrEmptyTagNameLiteral = xerrors.NewInvalidParamsError(errors.New("tag name cannot be empty"))
+	errTagEncoderInUse     = errors.New("encoder already in use")
+	errTagLiteralTooLong   = errors.New("literal is too long")
+	errEmptyTagNameLiteral = xerrors.NewInvalidParamsError(errors.New("tag name cannot be empty"))
 )
 
 type newCheckedBytesFn func([]byte, checked.BytesOptions) checked.Bytes
@@ -168,7 +166,7 @@ func (e *encoder) Finalize() {
 
 func (e *encoder) encodeTag(t ident.Tag) error {
 	if len(t.Name.Bytes()) == 0 {
-		return ErrEmptyTagNameLiteral
+		return errEmptyTagNameLiteral
 	}
 
 	if err := e.encodeID(t.Name); err != nil {
@@ -206,10 +204,10 @@ func (e *encoder) encodeUInt16(v uint16) []byte {
 }
 
 func encodeUInt16(v uint16, dest []byte) []byte {
-	ByteOrder.PutUint16(dest, v)
+	byteOrder.PutUint16(dest, v)
 	return dest
 }
 
 func decodeUInt16(b []byte) uint16 {
-	return ByteOrder.Uint16(b)
+	return byteOrder.Uint16(b)
 }

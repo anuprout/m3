@@ -40,7 +40,6 @@ import (
 	"github.com/m3db/m3/src/dbnode/storage/block"
 	"github.com/m3db/m3/src/dbnode/storage/bootstrap"
 	"github.com/m3db/m3/src/dbnode/storage/index"
-	"github.com/m3db/m3/src/dbnode/storage/limits"
 	"github.com/m3db/m3/src/dbnode/storage/repair"
 	"github.com/m3db/m3/src/dbnode/storage/series"
 	"github.com/m3db/m3/src/dbnode/ts/writes"
@@ -168,9 +167,6 @@ type options struct {
 	schemaReg                       namespace.SchemaRegistry
 	blockLeaseManager               block.LeaseManager
 	onColdFlush                     OnColdFlush
-	forceColdWritesEnabled          bool
-	sourceLoggerBuilder             limits.SourceLoggerBuilder
-	iterationOptions                index.IterationOptions
 	memoryTracker                   MemoryTracker
 	mmapReporter                    mmap.Reporter
 	doNotIndexWithFieldsMap         map[string]string
@@ -180,7 +176,6 @@ type options struct {
 	wideBatchSize                   int
 	newBackgroundProcessFns         []NewBackgroundProcessFn
 	namespaceHooks                  NamespaceHooks
-	tileAggregator                  TileAggregator
 }
 
 // NewOptions creates a new set of storage options with defaults
@@ -256,7 +251,6 @@ func newOptions(poolOpts pool.ObjectPoolOptions) Options {
 		mediatorTickInterval:            defaultMediatorTickInterval,
 		wideBatchSize:                   defaultWideBatchSize,
 		namespaceHooks:                  &noopNamespaceHooks{},
-		tileAggregator:                  &noopTileAggregator{},
 	}
 	return o.SetEncodingM3TSZPooled()
 }
@@ -794,36 +788,6 @@ func (o *options) OnColdFlush() OnColdFlush {
 	return o.onColdFlush
 }
 
-func (o *options) SetForceColdWritesEnabled(value bool) Options {
-	opts := *o
-	opts.forceColdWritesEnabled = value
-	return &opts
-}
-
-func (o *options) ForceColdWritesEnabled() bool {
-	return o.forceColdWritesEnabled
-}
-
-func (o *options) SetSourceLoggerBuilder(value limits.SourceLoggerBuilder) Options {
-	opts := *o
-	opts.sourceLoggerBuilder = value
-	return &opts
-}
-
-func (o *options) SourceLoggerBuilder() limits.SourceLoggerBuilder {
-	return o.sourceLoggerBuilder
-}
-
-func (o *options) SetIterationOptions(value index.IterationOptions) Options {
-	opts := *o
-	opts.iterationOptions = value
-	return &opts
-}
-
-func (o *options) IterationOptions() index.IterationOptions {
-	return o.iterationOptions
-}
-
 func (o *options) SetMemoryTracker(memTracker MemoryTracker) Options {
 	opts := *o
 	opts.memoryTracker = memTracker
@@ -916,17 +880,6 @@ func (o *options) NamespaceHooks() NamespaceHooks {
 	return o.namespaceHooks
 }
 
-func (o *options) SetTileAggregator(value TileAggregator) Options {
-	opts := *o
-	opts.tileAggregator = value
-
-	return &opts
-}
-
-func (o *options) TileAggregator() TileAggregator {
-	return o.tileAggregator
-}
-
 type noOpColdFlush struct{}
 
 func (n *noOpColdFlush) ColdFlushNamespace(Namespace) (OnColdFlushNamespace, error) {
@@ -937,18 +890,4 @@ type noopNamespaceHooks struct{}
 
 func (h *noopNamespaceHooks) OnCreatedNamespace(Namespace, GetNamespaceFn) error {
 	return nil
-}
-
-type noopTileAggregator struct{}
-
-func (a *noopTileAggregator) AggregateTiles(
-	ctx context.Context,
-	sourceNs, targetNs Namespace,
-	shardID uint32,
-	blockReaders []fs.DataFileSetReader,
-	writer fs.StreamingWriter,
-	onFlushSeries persist.OnFlushSeries,
-	opts AggregateTilesOptions,
-) (int64, error) {
-	return 0, nil
 }

@@ -30,7 +30,6 @@ import (
 	"github.com/m3db/m3/src/dbnode/retention"
 	"github.com/m3db/m3/src/dbnode/storage/bootstrap/result"
 	"github.com/m3db/m3/src/dbnode/storage/index/compaction"
-	"github.com/m3db/m3/src/dbnode/test"
 	"github.com/m3db/m3/src/dbnode/tracepoint"
 	"github.com/m3db/m3/src/m3ninx/doc"
 	"github.com/m3db/m3/src/m3ninx/idx"
@@ -114,7 +113,7 @@ func TestBlockWriteAfterClose(t *testing.T) {
 	batch.Append(WriteBatchEntry{
 		Timestamp:     nowNotBlockStartAligned,
 		OnIndexSeries: lifecycle,
-	}, doc.Metadata{})
+	}, doc.Document{})
 
 	res, err := b.WriteBatch(batch)
 	require.Error(t, err)
@@ -125,7 +124,7 @@ func TestBlockWriteAfterClose(t *testing.T) {
 	batch.ForEach(func(
 		idx int,
 		entry WriteBatchEntry,
-		doc doc.Metadata,
+		doc doc.Document,
 		result WriteBatchEntryResult,
 	) {
 		verified++
@@ -163,7 +162,7 @@ func TestBlockWriteAfterSeal(t *testing.T) {
 	batch.Append(WriteBatchEntry{
 		Timestamp:     nowNotBlockStartAligned,
 		OnIndexSeries: lifecycle,
-	}, doc.Metadata{})
+	}, doc.Document{})
 
 	res, err := b.WriteBatch(batch)
 	require.Error(t, err)
@@ -174,7 +173,7 @@ func TestBlockWriteAfterSeal(t *testing.T) {
 	batch.ForEach(func(
 		idx int,
 		entry WriteBatchEntry,
-		doc doc.Metadata,
+		doc doc.Document,
 		result WriteBatchEntryResult,
 	) {
 		verified++
@@ -271,7 +270,7 @@ func TestBlockWriteActualSegmentPartialFailure(t *testing.T) {
 	batch.Append(WriteBatchEntry{
 		Timestamp:     nowNotBlockStartAligned,
 		OnIndexSeries: h2,
-	}, doc.Metadata{})
+	}, doc.Document{})
 	res, err := b.WriteBatch(batch)
 	require.Error(t, err)
 	require.Equal(t, int64(1), res.NumSuccess)
@@ -281,7 +280,7 @@ func TestBlockWriteActualSegmentPartialFailure(t *testing.T) {
 	batch.ForEach(func(
 		idx int,
 		entry WriteBatchEntry,
-		_ doc.Metadata,
+		_ doc.Document,
 		result WriteBatchEntryResult,
 	) {
 		verified++
@@ -332,7 +331,7 @@ func TestBlockWritePartialFailure(t *testing.T) {
 	batch.Append(WriteBatchEntry{
 		Timestamp:     nowNotBlockStartAligned,
 		OnIndexSeries: h2,
-	}, doc.Metadata{})
+	}, doc.Document{})
 
 	res, err := b.WriteBatch(batch)
 	require.Error(t, err)
@@ -343,7 +342,7 @@ func TestBlockWritePartialFailure(t *testing.T) {
 	batch.ForEach(func(
 		idx int,
 		entry WriteBatchEntry,
-		doc doc.Metadata,
+		doc doc.Document,
 		result WriteBatchEntryResult,
 	) {
 		verified++
@@ -453,8 +452,8 @@ func TestBlockQueryAddResultsSegmentsError(t *testing.T) {
 
 	b.mutableSegments.foregroundSegments = []*readableSeg{newReadableSeg(seg1, testOpts)}
 	b.shardRangesSegmentsByVolumeType = map[idxpersist.IndexVolumeType][]blockShardRangesSegments{
-		idxpersist.DefaultIndexVolumeType: {
-			{segments: []segment.Segment{seg2, seg3}},
+		idxpersist.DefaultIndexVolumeType: []blockShardRangesSegments{
+			blockShardRangesSegments{segments: []segment.Segment{seg2, seg3}},
 		},
 	}
 
@@ -523,7 +522,7 @@ func TestBlockMockQueryExecutorExecIterErr(t *testing.T) {
 	gomock.InOrder(
 		exec.EXPECT().Execute(gomock.Any()).Return(dIter, nil),
 		dIter.EXPECT().Next().Return(true),
-		dIter.EXPECT().Current().Return(doc.NewDocumentFromMetadata(testDoc1())),
+		dIter.EXPECT().Current().Return(testDoc1()),
 		dIter.EXPECT().Next().Return(false),
 		dIter.EXPECT().Err().Return(fmt.Errorf("randomerr")),
 		dIter.EXPECT().Close(),
@@ -564,7 +563,7 @@ func TestBlockMockQueryExecutorExecLimit(t *testing.T) {
 	gomock.InOrder(
 		exec.EXPECT().Execute(gomock.Any()).Return(dIter, nil),
 		dIter.EXPECT().Next().Return(true),
-		dIter.EXPECT().Current().Return(doc.NewDocumentFromMetadata(testDoc1())),
+		dIter.EXPECT().Current().Return(testDoc1()),
 		dIter.EXPECT().Next().Return(true),
 		dIter.EXPECT().Err().Return(nil),
 		dIter.EXPECT().Close().Return(nil),
@@ -582,10 +581,8 @@ func TestBlockMockQueryExecutorExecLimit(t *testing.T) {
 	require.False(t, exhaustive)
 
 	require.Equal(t, 1, results.Map().Len())
-	d, ok := results.Map().Get(testDoc1().ID)
+	t1, ok := results.Map().Get(ident.StringID(string(testDoc1().ID)))
 	require.True(t, ok)
-
-	t1 := test.DocumentToTagIter(t, d)
 	require.True(t, ident.NewTagIterMatcher(
 		ident.MustNewTagStringsIterator("bar", "baz")).Matches(
 		t1))
@@ -656,7 +653,7 @@ func TestBlockMockQuerySeriesLimitNonExhaustive(t *testing.T) {
 	gomock.InOrder(
 		exec.EXPECT().Execute(gomock.Any()).Return(dIter, nil),
 		dIter.EXPECT().Next().Return(true),
-		dIter.EXPECT().Current().Return(doc.NewDocumentFromMetadata(testDoc1())),
+		dIter.EXPECT().Current().Return(testDoc1()),
 		dIter.EXPECT().Next().Return(true),
 		dIter.EXPECT().Err().Return(nil),
 		dIter.EXPECT().Close().Return(nil),
@@ -673,11 +670,8 @@ func TestBlockMockQuerySeriesLimitNonExhaustive(t *testing.T) {
 	require.False(t, exhaustive)
 
 	require.Equal(t, 1, results.Map().Len())
-
-	d, ok := results.Map().Get(testDoc1().ID)
+	t1, ok := results.Map().Get(ident.StringID(string(testDoc1().ID)))
 	require.True(t, ok)
-
-	t1 := test.DocumentToTagIter(t, d)
 	require.True(t, ident.NewTagIterMatcher(
 		ident.MustNewTagStringsIterator("bar", "baz")).Matches(
 		t1))
@@ -709,7 +703,7 @@ func TestBlockMockQuerySeriesLimitExhaustive(t *testing.T) {
 	gomock.InOrder(
 		exec.EXPECT().Execute(gomock.Any()).Return(dIter, nil),
 		dIter.EXPECT().Next().Return(true),
-		dIter.EXPECT().Current().Return(doc.NewDocumentFromMetadata(testDoc1())),
+		dIter.EXPECT().Current().Return(testDoc1()),
 		dIter.EXPECT().Next().Return(false),
 		dIter.EXPECT().Err().Return(nil),
 		dIter.EXPECT().Close().Return(nil),
@@ -728,9 +722,8 @@ func TestBlockMockQuerySeriesLimitExhaustive(t *testing.T) {
 
 	rMap := results.Map()
 	require.Equal(t, 1, rMap.Len())
-	d, ok := rMap.Get(testDoc1().ID)
+	t1, ok := rMap.Get(ident.StringID(string(testDoc1().ID)))
 	require.True(t, ok)
-	t1 := test.DocumentToTagIter(t, d)
 	require.True(t, ident.NewTagIterMatcher(
 		ident.MustNewTagStringsIterator("bar", "baz")).Matches(
 		t1))
@@ -762,7 +755,7 @@ func TestBlockMockQueryDocsLimitNonExhaustive(t *testing.T) {
 	gomock.InOrder(
 		exec.EXPECT().Execute(gomock.Any()).Return(dIter, nil),
 		dIter.EXPECT().Next().Return(true),
-		dIter.EXPECT().Current().Return(doc.NewDocumentFromMetadata(testDoc1())),
+		dIter.EXPECT().Current().Return(testDoc1()),
 		dIter.EXPECT().Next().Return(true),
 		dIter.EXPECT().Err().Return(nil),
 		dIter.EXPECT().Close().Return(nil),
@@ -779,9 +772,8 @@ func TestBlockMockQueryDocsLimitNonExhaustive(t *testing.T) {
 	require.False(t, exhaustive)
 
 	require.Equal(t, 1, results.Map().Len())
-	d, ok := results.Map().Get(testDoc1().ID)
+	t1, ok := results.Map().Get(ident.StringID(string(testDoc1().ID)))
 	require.True(t, ok)
-	t1 := test.DocumentToTagIter(t, d)
 	require.True(t, ident.NewTagIterMatcher(
 		ident.MustNewTagStringsIterator("bar", "baz")).Matches(
 		t1))
@@ -813,7 +805,7 @@ func TestBlockMockQueryDocsLimitExhaustive(t *testing.T) {
 	gomock.InOrder(
 		exec.EXPECT().Execute(gomock.Any()).Return(dIter, nil),
 		dIter.EXPECT().Next().Return(true),
-		dIter.EXPECT().Current().Return(doc.NewDocumentFromMetadata(testDoc1())),
+		dIter.EXPECT().Current().Return(testDoc1()),
 		dIter.EXPECT().Next().Return(false),
 		dIter.EXPECT().Err().Return(nil),
 		dIter.EXPECT().Close().Return(nil),
@@ -832,9 +824,8 @@ func TestBlockMockQueryDocsLimitExhaustive(t *testing.T) {
 
 	rMap := results.Map()
 	require.Equal(t, 1, rMap.Len())
-	d, ok := rMap.Get(testDoc1().ID)
+	t1, ok := rMap.Get(ident.StringID(string(testDoc1().ID)))
 	require.True(t, ok)
-	t1 := test.DocumentToTagIter(t, d)
 	require.True(t, ident.NewTagIterMatcher(
 		ident.MustNewTagStringsIterator("bar", "baz")).Matches(
 		t1))
@@ -866,9 +857,7 @@ func TestBlockMockQueryMergeResultsMapLimit(t *testing.T) {
 	limit := 1
 	results := NewQueryResults(nil,
 		QueryResultsOptions{SizeLimit: limit}, testOpts)
-	_, _, err = results.AddDocuments([]doc.Document{
-		doc.NewDocumentFromMetadata(testDoc1()),
-	})
+	_, _, err = results.AddDocuments([]doc.Document{testDoc1()})
 	require.NoError(t, err)
 
 	dIter := doc.NewMockIterator(ctrl)
@@ -889,9 +878,8 @@ func TestBlockMockQueryMergeResultsMapLimit(t *testing.T) {
 
 	rMap := results.Map()
 	require.Equal(t, 1, rMap.Len())
-	d, ok := rMap.Get(testDoc1().ID)
+	t1, ok := rMap.Get(ident.StringID(string(testDoc1().ID)))
 	require.True(t, ok)
-	t1 := test.DocumentToTagIter(t, d)
 	require.True(t, ident.NewTagIterMatcher(
 		ident.MustNewTagStringsIterator("bar", "baz")).Matches(
 		t1))
@@ -920,18 +908,16 @@ func TestBlockMockQueryMergeResultsDupeID(t *testing.T) {
 	}
 
 	results := NewQueryResults(nil, QueryResultsOptions{}, testOpts)
-	_, _, err = results.AddDocuments([]doc.Document{
-		doc.NewDocumentFromMetadata(testDoc1()),
-	})
+	_, _, err = results.AddDocuments([]doc.Document{testDoc1()})
 	require.NoError(t, err)
 
 	dIter := doc.NewMockIterator(ctrl)
 	gomock.InOrder(
 		exec.EXPECT().Execute(gomock.Any()).Return(dIter, nil),
 		dIter.EXPECT().Next().Return(true),
-		dIter.EXPECT().Current().Return(doc.NewDocumentFromMetadata(testDoc1DupeID())),
+		dIter.EXPECT().Current().Return(testDoc1DupeID()),
 		dIter.EXPECT().Next().Return(true),
-		dIter.EXPECT().Current().Return(doc.NewDocumentFromMetadata(testDoc2())),
+		dIter.EXPECT().Current().Return(testDoc2()),
 		dIter.EXPECT().Next().Return(false),
 		dIter.EXPECT().Err().Return(nil),
 		dIter.EXPECT().Close().Return(nil),
@@ -947,16 +933,14 @@ func TestBlockMockQueryMergeResultsDupeID(t *testing.T) {
 
 	rMap := results.Map()
 	require.Equal(t, 2, rMap.Len())
-	d, ok := rMap.Get(testDoc1().ID)
+	t1, ok := rMap.Get(ident.StringID(string(testDoc1().ID)))
 	require.True(t, ok)
-	t1 := test.DocumentToTagIter(t, d)
 	require.True(t, ident.NewTagIterMatcher(
 		ident.MustNewTagStringsIterator("bar", "baz")).Matches(
 		t1))
 
-	d, ok = rMap.Get(testDoc2().ID)
+	t2, ok := rMap.Get(ident.StringID(string(testDoc2().ID)))
 	require.True(t, ok)
-	t2 := test.DocumentToTagIter(t, d)
 	require.True(t, ident.NewTagIterMatcher(
 		ident.MustNewTagStringsIterator("bar", "baz", "some", "more")).Matches(
 		t2))
@@ -1418,16 +1402,14 @@ func TestBlockE2EInsertQuery(t *testing.T) {
 	require.Equal(t, 2, results.Size())
 
 	rMap := results.Map()
-	d, ok := rMap.Get(testDoc1().ID)
+	t1, ok := rMap.Get(ident.StringID(string(testDoc1().ID)))
 	require.True(t, ok)
-	t1 := test.DocumentToTagIter(t, d)
 	require.True(t, ident.NewTagIterMatcher(
 		ident.MustNewTagStringsIterator("bar", "baz")).Matches(
 		t1))
 
-	d, ok = rMap.Get(testDoc2().ID)
+	t2, ok := rMap.Get(ident.StringID(string(testDoc2().ID)))
 	require.True(t, ok)
-	t2 := test.DocumentToTagIter(t, d)
 	require.True(t, ident.NewTagIterMatcher(
 		ident.MustNewTagStringsIterator("bar", "baz", "some", "more")).Matches(
 		t2))
@@ -1497,19 +1479,17 @@ func TestBlockE2EInsertQueryLimit(t *testing.T) {
 
 	rMap := results.Map()
 	numFound := 0
-	d, ok := rMap.Get(testDoc1().ID)
+	t1, ok := rMap.Get(ident.StringID(string(testDoc1().ID)))
 	if ok {
 		numFound++
-		t1 := test.DocumentToTagIter(t, d)
 		require.True(t, ident.NewTagIterMatcher(
 			ident.MustNewTagStringsIterator("bar", "baz")).Matches(
 			t1))
 	}
 
-	d, ok = rMap.Get(testDoc2().ID)
+	t2, ok := rMap.Get(ident.StringID(string(testDoc2().ID)))
 	if ok {
 		numFound++
-		t2 := test.DocumentToTagIter(t, d)
 		require.True(t, ident.NewTagIterMatcher(
 			ident.MustNewTagStringsIterator("bar", "baz", "some", "more")).Matches(
 			t2))
@@ -1587,16 +1567,14 @@ func TestBlockE2EInsertAddResultsQuery(t *testing.T) {
 	require.Equal(t, 2, results.Size())
 
 	rMap := results.Map()
-	d, ok := rMap.Get(testDoc1().ID)
+	t1, ok := rMap.Get(ident.StringID(string(testDoc1().ID)))
 	require.True(t, ok)
-	t1 := test.DocumentToTagIter(t, d)
 	require.True(t, ident.NewTagIterMatcher(
 		ident.MustNewTagStringsIterator("bar", "baz")).Matches(
 		t1))
 
-	d, ok = rMap.Get(testDoc2().ID)
+	t2, ok := rMap.Get(ident.StringID(string(testDoc2().ID)))
 	require.True(t, ok)
-	t2 := test.DocumentToTagIter(t, d)
 	require.True(t, ident.NewTagIterMatcher(
 		ident.MustNewTagStringsIterator("bar", "baz", "some", "more")).Matches(
 		t2))
@@ -1668,16 +1646,14 @@ func TestBlockE2EInsertAddResultsMergeQuery(t *testing.T) {
 	require.Equal(t, 2, results.Size())
 
 	rMap := results.Map()
-	d, ok := results.Map().Get(testDoc1().ID)
+	t1, ok := results.Map().Get(ident.StringID(string(testDoc1().ID)))
 	require.True(t, ok)
-	t1 := test.DocumentToTagIter(t, d)
 	require.True(t, ident.NewTagIterMatcher(
 		ident.MustNewTagStringsIterator("bar", "baz")).Matches(
 		t1))
 
-	d, ok = rMap.Get(testDoc2().ID)
+	t2, ok := rMap.Get(ident.StringID(string(testDoc2().ID)))
 	require.True(t, ok)
-	t2 := test.DocumentToTagIter(t, d)
 	require.True(t, ident.NewTagIterMatcher(
 		ident.MustNewTagStringsIterator("bar", "baz", "some", "more")).Matches(
 		t2))
@@ -1924,8 +1900,8 @@ func TestBlockAggregate(t *testing.T) {
 	require.True(t, exhaustive)
 
 	assertAggregateResultsMapEquals(t, map[string][]string{
-		"f1": {"t1", "t2", "t3"},
-		"f2": {"t1"},
+		"f1": []string{"t1", "t2", "t3"},
+		"f2": []string{"t1"},
 	}, results)
 
 	sp.Finish()
@@ -2000,7 +1976,7 @@ func TestBlockAggregateNotExhaustive(t *testing.T) {
 	require.False(t, exhaustive)
 
 	assertAggregateResultsMapEquals(t, map[string][]string{
-		"f1": {"t1"},
+		"f1": []string{"t1"},
 	}, results)
 
 	sp.Finish()
@@ -2091,8 +2067,8 @@ func TestBlockE2EInsertAggregate(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, exhaustive)
 	assertAggregateResultsMapEquals(t, map[string][]string{
-		"bar":  {"baz", "qux"},
-		"some": {"more", "other"},
+		"bar":  []string{"baz", "qux"},
+		"some": []string{"more", "other"},
 	}, results)
 
 	results = NewAggregateResults(ident.StringID("ns"), AggregateResultsOptions{
@@ -2109,7 +2085,7 @@ func TestBlockE2EInsertAggregate(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, exhaustive)
 	assertAggregateResultsMapEquals(t, map[string][]string{
-		"bar": {"baz", "qux"},
+		"bar": []string{"baz", "qux"},
 	}, results)
 
 	results = NewAggregateResults(ident.StringID("ns"), AggregateResultsOptions{
@@ -2170,7 +2146,7 @@ func assertAggregateResultsMapEquals(t *testing.T, expected map[string][]string,
 	}
 }
 
-func testSegment(t *testing.T, docs ...doc.Metadata) segment.Segment {
+func testSegment(t *testing.T, docs ...doc.Document) segment.Segment {
 	seg, err := mem.NewSegment(testOpts.MemSegmentOptions())
 	require.NoError(t, err)
 
@@ -2182,11 +2158,11 @@ func testSegment(t *testing.T, docs ...doc.Metadata) segment.Segment {
 	return seg
 }
 
-func testDoc1() doc.Metadata {
-	return doc.Metadata{
+func testDoc1() doc.Document {
+	return doc.Document{
 		ID: []byte("foo"),
 		Fields: []doc.Field{
-			{
+			doc.Field{
 				Name:  []byte("bar"),
 				Value: []byte("baz"),
 			},
@@ -2194,15 +2170,15 @@ func testDoc1() doc.Metadata {
 	}
 }
 
-func testDoc1DupeID() doc.Metadata {
-	return doc.Metadata{
+func testDoc1DupeID() doc.Document {
+	return doc.Document{
 		ID: []byte("foo"),
 		Fields: []doc.Field{
-			{
+			doc.Field{
 				Name:  []byte("why"),
 				Value: []byte("not"),
 			},
-			{
+			doc.Field{
 				Name:  []byte("some"),
 				Value: []byte("more"),
 			},
@@ -2210,15 +2186,15 @@ func testDoc1DupeID() doc.Metadata {
 	}
 }
 
-func testDoc2() doc.Metadata {
-	return doc.Metadata{
+func testDoc2() doc.Document {
+	return doc.Document{
 		ID: []byte("something"),
 		Fields: []doc.Field{
-			{
+			doc.Field{
 				Name:  []byte("bar"),
 				Value: []byte("baz"),
 			},
-			{
+			doc.Field{
 				Name:  []byte("some"),
 				Value: []byte("more"),
 			},
@@ -2226,15 +2202,15 @@ func testDoc2() doc.Metadata {
 	}
 }
 
-func testDoc3() doc.Metadata {
-	return doc.Metadata{
+func testDoc3() doc.Document {
+	return doc.Document{
 		ID: []byte("bar"),
 		Fields: []doc.Field{
-			{
+			doc.Field{
 				Name:  []byte("bar"),
 				Value: []byte("qux"),
 			},
-			{
+			doc.Field{
 				Name:  []byte("some"),
 				Value: []byte("other"),
 			},

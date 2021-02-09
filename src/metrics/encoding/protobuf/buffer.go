@@ -26,18 +26,16 @@ import (
 	"github.com/m3db/m3/src/x/pool"
 )
 
-// PoolReleaseFn is a function used to release underlying slice back to bytes pool.
-type PoolReleaseFn func([]byte)
-
 // Buffer contains a byte slice backed by an optional bytes pool.
 type Buffer struct {
-	buf       []byte
-	finalizer PoolReleaseFn
+	buf    []byte
+	pool   pool.BytesPool
+	closed bool
 }
 
 // NewBuffer create a new buffer.
-func NewBuffer(buf []byte, p PoolReleaseFn) Buffer {
-	return Buffer{buf: buf, finalizer: p}
+func NewBuffer(buf []byte, p pool.BytesPool) Buffer {
+	return Buffer{buf: buf, pool: p}
 }
 
 // Bytes returns the raw byte slice.
@@ -48,11 +46,15 @@ func (b *Buffer) Truncate(n int) { b.buf = b.buf[:n] }
 
 // Close closes the buffer.
 func (b *Buffer) Close() {
-	if b.finalizer != nil && b.buf != nil {
-		b.finalizer(b.buf)
+	if b.closed {
+		return
 	}
+	b.closed = true
+	if b.pool != nil && b.buf != nil {
+		b.pool.Put(b.buf)
+	}
+	b.pool = nil
 	b.buf = nil
-	b.finalizer = nil
 }
 
 type copyDataMode int

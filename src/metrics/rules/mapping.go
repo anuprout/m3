@@ -478,6 +478,5 @@ func (mc *mappingRule) mappingRuleView(snapshotIdx int) (view.MappingRule, error
 		StoragePolicies:     mrs.storagePolicies,
 		LastUpdatedBy:       mrs.lastUpdatedBy,
 		LastUpdatedAtMillis: mrs.lastUpdatedAtNanos / nanosPerMilli,
-		Tags:                mrs.tags,
 	}, nil
 }

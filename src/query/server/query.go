@@ -33,7 +33,6 @@ import (
 	"github.com/m3db/m3/src/aggregator/server"
 	clusterclient "github.com/m3db/m3/src/cluster/client"
 	etcdclient "github.com/m3db/m3/src/cluster/client/etcd"
-	"github.com/m3db/m3/src/cluster/kv"
 	"github.com/m3db/m3/src/cmd/services/m3aggregator/serve"
 	"github.com/m3db/m3/src/cmd/services/m3coordinator/downsample"
 	"github.com/m3db/m3/src/cmd/services/m3coordinator/ingest"
@@ -73,7 +72,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	kitlogzap "github.com/go-kit/kit/log/zap"
-	"github.com/opentracing/opentracing-go"
+	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	extprom "github.com/prometheus/client_golang/prometheus"
 	prometheuspromql "github.com/prometheus/prometheus/promql"
@@ -150,9 +149,6 @@ type RunOptions struct {
 	// CustomBuildTags are additional tags to be added to the instrument build
 	// reporter.
 	CustomBuildTags map[string]string
-
-	// ApplyCustomRuleStore provides an option to swap the backend used for the rule stores.
-	ApplyCustomRuleStore downsample.CustomRuleStoreFn
 }
 
 // InstrumentOptionsReady is a set of instrument options
@@ -277,30 +273,18 @@ func Run(runOpts RunOptions) {
 		logger.Fatal("could not parse query restrict tags config", zap.Error(err))
 	}
 
-	timeout := cfg.Query.TimeoutOrDefault()
-	if runOpts.DBConfig != nil &&
-		runOpts.DBConfig.Client.FetchTimeout != nil &&
-		*runOpts.DBConfig.Client.FetchTimeout > timeout {
-		timeout = *runOpts.DBConfig.Client.FetchTimeout
-	}
-
-	fetchOptsBuilderLimitsOpts := cfg.Limits.PerQuery.AsFetchOptionsBuilderLimitsOptions()
-	fetchOptsBuilder, err := handleroptions.NewFetchOptionsBuilder(
-		handleroptions.FetchOptionsBuilderOptions{
-			Limits:        fetchOptsBuilderLimitsOpts,
-			RestrictByTag: storageRestrictByTags,
-			Timeout:       timeout,
-		})
-	if err != nil {
-		logger.Fatal("could not set fetch options parser", zap.Error(err))
-	}
-
 	var (
-		clusterNamespacesWatcher m3.ClusterNamespacesWatcher
-		backendStorage           storage.Storage
-		clusterClient            clusterclient.Client
-		downsampler              downsample.Downsampler
-		queryCtxOpts             = models.QueryContextOptions{
+		clusterNamespacesWatcher   m3.ClusterNamespacesWatcher
+		backendStorage             storage.Storage
+		clusterClient              clusterclient.Client
+		downsampler                downsample.Downsampler
+		fetchOptsBuilderLimitsOpts = cfg.Limits.PerQuery.AsFetchOptionsBuilderLimitsOptions()
+		fetchOptsBuilder           = handleroptions.NewFetchOptionsBuilder(
+			handleroptions.FetchOptionsBuilderOptions{
+				Limits:        fetchOptsBuilderLimitsOpts,
+				RestrictByTag: storageRestrictByTags,
+			})
+		queryCtxOpts = models.QueryContextOptions{
 			LimitMaxTimeseries: fetchOptsBuilderLimitsOpts.SeriesLimit,
 			LimitMaxDocs:       fetchOptsBuilderLimitsOpts.DocsLimit,
 			RequireExhaustive:  fetchOptsBuilderLimitsOpts.RequireExhaustive,
@@ -493,15 +477,10 @@ func Run(runOpts RunOptions) {
 		graphiteStorageOpts.RenderPartialStart = cfg.Carbon.RenderPartialStart
 		graphiteStorageOpts.RenderPartialEnd = cfg.Carbon.RenderPartialEnd
 		graphiteStorageOpts.RenderSeriesAllNaNs = cfg.Carbon.RenderSeriesAllNaNs
-		graphiteStorageOpts.CompileEscapeAllNotOnlyQuotes = cfg.Carbon.CompileEscapeAllNotOnlyQuotes
 	}
 
-	prometheusEngine, err := newPromQLEngine(cfg, prometheusEngineRegistry,
+	prometheusEngine := newPromQLEngine(cfg.Query, prometheusEngineRegistry,
 		instrumentOptions)
-	if err != nil {
-		logger.Fatal("unable to create PromQL engine", zap.Error(err))
-	}
-
 	handlerOptions, err := options.NewHandlerOptions(downsamplerAndWriter,
 		tagOptions, engine, prometheusEngine, m3dbClusters, clusterClient, cfg,
 		runOpts.DBConfig, fetchOptsBuilder, queryCtxOpts,
@@ -585,10 +564,12 @@ func Run(runOpts RunOptions) {
 	}
 
 	if cfg.Carbon != nil && cfg.Carbon.Ingester != nil {
-		server := startCarbonIngestion(*cfg.Carbon.Ingester, listenerOpts,
+		server, ok := startCarbonIngestion(cfg.Carbon, listenerOpts,
 			instrumentOptions, logger, m3dbClusters, clusterNamespacesWatcher,
 			downsamplerAndWriter)
-		defer server.Close()
+		if ok {
+			defer server.Close()
+		}
 	}
 
 	// Wait for process interrupt.
@@ -667,7 +648,7 @@ func newM3DBStorage(
 		ds, err := newDownsampler(
 			cfg.Downsample, clusterClient,
 			fanoutStorage, clusterNamespacesWatcher,
-			tsdbOpts.TagOptions(), instrumentOptions, rwOpts, runOpts.ApplyCustomRuleStore)
+			tsdbOpts.TagOptions(), instrumentOptions, rwOpts)
 		if err != nil {
 			return nil, err
 		}
@@ -726,7 +707,6 @@ func newDownsampler(
 	tagOptions models.TagOptions,
 	instrumentOpts instrument.Options,
 	rwOpts xio.Options,
-	applyCustomRuleStore downsample.CustomRuleStoreFn,
 ) (downsample.Downsampler, error) {
 	// Namespace the downsampler metrics.
 	instrumentOpts = instrumentOpts.SetMetricsScope(
@@ -737,20 +717,10 @@ func newDownsampler(
 			"must set this config for downsampler")
 	}
 
-	var kvStore kv.Store
-	var err error
-
-	if applyCustomRuleStore == nil {
-		kvStore, err = clusterManagementClient.KV()
-		if err != nil {
-			return nil, errors.Wrap(err, "unable to create KV store from the "+
-				"cluster management config client")
-		}
-	} else {
-		kvStore, err = applyCustomRuleStore(clusterManagementClient, instrumentOpts)
-		if err != nil {
-			return nil, errors.Wrap(err, "unable to apply custom rule store")
-		}
+	kvStore, err := clusterManagementClient.KV()
+	if err != nil {
+		return nil, errors.Wrap(err, "unable to create KV store from the "+
+			"cluster management config client")
 	}
 
 	tagEncoderOptions := serialize.NewTagEncoderOptions()
@@ -1088,14 +1058,15 @@ func startGRPCServer(
 }
 
 func startCarbonIngestion(
-	ingesterCfg config.CarbonIngesterConfiguration,
+	cfg *config.CarbonConfiguration,
 	listenerOpts xnet.ListenerOptions,
 	iOpts instrument.Options,
 	logger *zap.Logger,
 	m3dbClusters m3.Clusters,
 	clusterNamespacesWatcher m3.ClusterNamespacesWatcher,
 	downsamplerAndWriter ingest.DownsamplerAndWriter,
-) xserver.Server {
+) (xserver.Server, bool) {
+	ingesterCfg := cfg.Ingester
 	logger.Info("carbon ingestion enabled, configuring ingester")
 
 	// Setup worker pool.
@@ -1159,7 +1130,7 @@ func startCarbonIngestion(
 
 	logger.Info("started carbon ingestion server", zap.String("listenAddress", carbonListenAddress))
 
-	return carbonServer
+	return carbonServer, true
 }
 
 func newDownsamplerAndWriter(
@@ -1183,24 +1154,18 @@ func newDownsamplerAndWriter(
 }
 
 func newPromQLEngine(
-	cfg config.Configuration,
+	cfg config.QueryConfiguration,
 	registry *extprom.Registry,
 	instrumentOpts instrument.Options,
-) (*prometheuspromql.Engine, error) {
-	lookbackDelta, err := cfg.LookbackDurationOrDefault()
-	if err != nil {
-		return nil, err
-	}
-
+) *prometheuspromql.Engine {
 	var (
 		kitLogger = kitlogzap.NewZapSugarLogger(instrumentOpts.Logger(), zapcore.InfoLevel)
 		opts      = prometheuspromql.EngineOpts{
-			Logger:        log.With(kitLogger, "component", "prometheus_engine"),
-			Reg:           registry,
-			MaxSamples:    cfg.Query.Prometheus.MaxSamplesPerQueryOrDefault(),
-			Timeout:       cfg.Query.TimeoutOrDefault(),
-			LookbackDelta: lookbackDelta,
+			Logger:     log.With(kitLogger, "component", "prometheus_engine"),
+			Reg:        registry,
+			MaxSamples: cfg.Prometheus.MaxSamplesPerQueryOrDefault(),
+			Timeout:    cfg.TimeoutOrDefault(),
 		}
 	)
-	return prometheuspromql.NewEngine(opts), nil
+	return prometheuspromql.NewEngine(opts)
 }

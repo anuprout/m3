@@ -155,36 +155,6 @@ func (m *MockSession) EXPECT() *MockSessionMockRecorder {
 	return m.recorder
 }
 
-// WriteClusterAvailability mocks base method
-func (m *MockSession) WriteClusterAvailability() (bool, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "WriteClusterAvailability")
-	ret0, _ := ret[0].(bool)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// WriteClusterAvailability indicates an expected call of WriteClusterAvailability
-func (mr *MockSessionMockRecorder) WriteClusterAvailability() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "WriteClusterAvailability", reflect.TypeOf((*MockSession)(nil).WriteClusterAvailability))
-}
-
-// ReadClusterAvailability mocks base method
-func (m *MockSession) ReadClusterAvailability() (bool, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ReadClusterAvailability")
-	ret0, _ := ret[0].(bool)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// ReadClusterAvailability indicates an expected call of ReadClusterAvailability
-func (mr *MockSessionMockRecorder) ReadClusterAvailability() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReadClusterAvailability", reflect.TypeOf((*MockSession)(nil).ReadClusterAvailability))
-}
-
 // Write mocks base method
 func (m *MockSession) Write(namespace, id ident.ID, t time.Time, value float64, unit time0.Unit, annotation []byte) error {
 	m.ctrl.T.Helper()
@@ -787,36 +757,6 @@ func (m *MockAdminSession) EXPECT() *MockAdminSessionMockRecorder {
 	return m.recorder
 }
 
-// WriteClusterAvailability mocks base method
-func (m *MockAdminSession) WriteClusterAvailability() (bool, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "WriteClusterAvailability")
-	ret0, _ := ret[0].(bool)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// WriteClusterAvailability indicates an expected call of WriteClusterAvailability
-func (mr *MockAdminSessionMockRecorder) WriteClusterAvailability() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "WriteClusterAvailability", reflect.TypeOf((*MockAdminSession)(nil).WriteClusterAvailability))
-}
-
-// ReadClusterAvailability mocks base method
-func (m *MockAdminSession) ReadClusterAvailability() (bool, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ReadClusterAvailability")
-	ret0, _ := ret[0].(bool)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// ReadClusterAvailability indicates an expected call of ReadClusterAvailability
-func (mr *MockAdminSessionMockRecorder) ReadClusterAvailability() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReadClusterAvailability", reflect.TypeOf((*MockAdminSession)(nil).ReadClusterAvailability))
-}
-
 // Write mocks base method
 func (m *MockAdminSession) Write(namespace, id ident.ID, t time.Time, value float64, unit time0.Unit, annotation []byte) error {
 	m.ctrl.T.Helper()
@@ -1083,21 +1023,6 @@ func (m *MockAdminSession) FetchBlocksFromPeers(namespace namespace.Metadata, sh
 func (mr *MockAdminSessionMockRecorder) FetchBlocksFromPeers(namespace, shard, consistencyLevel, metadatas, opts interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FetchBlocksFromPeers", reflect.TypeOf((*MockAdminSession)(nil).FetchBlocksFromPeers), namespace, shard, consistencyLevel, metadatas, opts)
-}
-
-// BorrowConnections mocks base method
-func (m *MockAdminSession) BorrowConnections(shardID uint32, fn WithBorrowConnectionFn, opts BorrowConnectionOptions) (BorrowConnectionsResult, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "BorrowConnections", shardID, fn, opts)
-	ret0, _ := ret[0].(BorrowConnectionsResult)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// BorrowConnections indicates an expected call of BorrowConnections
-func (mr *MockAdminSessionMockRecorder) BorrowConnections(shardID, fn, opts interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BorrowConnections", reflect.TypeOf((*MockAdminSession)(nil).BorrowConnections), shardID, fn, opts)
 }
 
 // MockOptions is a mock of Options interface
@@ -4529,36 +4454,6 @@ func (m *MockclientSession) EXPECT() *MockclientSessionMockRecorder {
 	return m.recorder
 }
 
-// WriteClusterAvailability mocks base method
-func (m *MockclientSession) WriteClusterAvailability() (bool, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "WriteClusterAvailability")
-	ret0, _ := ret[0].(bool)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// WriteClusterAvailability indicates an expected call of WriteClusterAvailability
-func (mr *MockclientSessionMockRecorder) WriteClusterAvailability() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "WriteClusterAvailability", reflect.TypeOf((*MockclientSession)(nil).WriteClusterAvailability))
-}
-
-// ReadClusterAvailability mocks base method
-func (m *MockclientSession) ReadClusterAvailability() (bool, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ReadClusterAvailability")
-	ret0, _ := ret[0].(bool)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// ReadClusterAvailability indicates an expected call of ReadClusterAvailability
-func (mr *MockclientSessionMockRecorder) ReadClusterAvailability() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReadClusterAvailability", reflect.TypeOf((*MockclientSession)(nil).ReadClusterAvailability))
-}
-
 // Write mocks base method
 func (m *MockclientSession) Write(namespace, id ident.ID, t time.Time, value float64, unit time0.Unit, annotation []byte) error {
 	m.ctrl.T.Helper()
@@ -4827,21 +4722,6 @@ func (mr *MockclientSessionMockRecorder) FetchBlocksFromPeers(namespace, shard, 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FetchBlocksFromPeers", reflect.TypeOf((*MockclientSession)(nil).FetchBlocksFromPeers), namespace, shard, consistencyLevel, metadatas, opts)
 }
 
-// BorrowConnections mocks base method
-func (m *MockclientSession) BorrowConnections(shardID uint32, fn WithBorrowConnectionFn, opts BorrowConnectionOptions) (BorrowConnectionsResult, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "BorrowConnections", shardID, fn, opts)
-	ret0, _ := ret[0].(BorrowConnectionsResult)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// BorrowConnections indicates an expected call of BorrowConnections
-func (mr *MockclientSessionMockRecorder) BorrowConnections(shardID, fn, opts interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BorrowConnections", reflect.TypeOf((*MockclientSession)(nil).BorrowConnections), shardID, fn, opts)
-}
-
 // Open mocks base method
 func (m *MockclientSession) Open() error {
 	m.ctrl.T.Helper()
@@ -4962,7 +4842,7 @@ func (mr *MockhostQueueMockRecorder) ConnectionPool() *gomock.Call {
 }
 
 // BorrowConnection mocks base method
-func (m *MockhostQueue) BorrowConnection(fn WithConnectionFn) error {
+func (m *MockhostQueue) BorrowConnection(fn withConnectionFn) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "BorrowConnection", fn)
 	ret0, _ := ret[0].(error)
@@ -5037,13 +4917,12 @@ func (mr *MockconnectionPoolMockRecorder) ConnectionCount() *gomock.Call {
 }
 
 // NextClient mocks base method
-func (m *MockconnectionPool) NextClient() (rpc.TChanNode, PooledChannel, error) {
+func (m *MockconnectionPool) NextClient() (rpc.TChanNode, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "NextClient")
 	ret0, _ := ret[0].(rpc.TChanNode)
-	ret1, _ := ret[1].(PooledChannel)
-	ret2, _ := ret[2].(error)
-	return ret0, ret1, ret2
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // NextClient indicates an expected call of NextClient
@@ -5088,7 +4967,7 @@ func (m *MockpeerSource) EXPECT() *MockpeerSourceMockRecorder {
 }
 
 // BorrowConnection mocks base method
-func (m *MockpeerSource) BorrowConnection(hostID string, fn WithConnectionFn) error {
+func (m *MockpeerSource) BorrowConnection(hostID string, fn withConnectionFn) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "BorrowConnection", hostID, fn)
 	ret0, _ := ret[0].(error)
@@ -5139,7 +5018,7 @@ func (mr *MockpeerMockRecorder) Host() *gomock.Call {
 }
 
 // BorrowConnection mocks base method
-func (m *Mockpeer) BorrowConnection(fn WithConnectionFn) error {
+func (m *Mockpeer) BorrowConnection(fn withConnectionFn) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "BorrowConnection", fn)
 	ret0, _ := ret[0].(error)

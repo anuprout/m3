@@ -30,10 +30,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/m3db/m3/src/query/api/v1/handler/prometheus"
 	"github.com/m3db/m3/src/query/api/v1/handler/prometheus/handleroptions"
 	"github.com/m3db/m3/src/query/block"
 	"github.com/m3db/m3/src/query/executor"
 	"github.com/m3db/m3/src/query/models"
+	"github.com/m3db/m3/src/query/storage"
 	"github.com/m3db/m3/src/query/test"
 	"github.com/m3db/m3/src/query/ts"
 	xerrors "github.com/m3db/m3/src/x/errors"
@@ -50,6 +52,12 @@ const (
 	promQuery = `http_requests_total{job="prometheus",group="canary"}`
 )
 
+var (
+	timeoutOpts = &prometheus.TimeoutOpts{
+		FetchTimeout: 15 * time.Second,
+	}
+)
+
 func defaultParams() url.Values {
 	vals := url.Values{}
 	now := time.Now()
@@ -61,20 +69,14 @@ func defaultParams() url.Values {
 }
 
 func testParseParams(req *http.Request) (models.RequestParams, error) {
-	fetchOptsBuilder, err := handleroptions.NewFetchOptionsBuilder(
-		handleroptions.FetchOptionsBuilderOptions{
-			Timeout: 15 * time.Second,
-		})
+	fetchOpts, err := handleroptions.
+		NewFetchOptionsBuilder(handleroptions.FetchOptionsBuilderOptions{}).
+		NewFetchOptions(req)
 	if err != nil {
 		return models.RequestParams{}, err
 	}
 
-	fetchOpts, err := fetchOptsBuilder.NewFetchOptions(req)
-	if err != nil {
-		return models.RequestParams{}, err
-	}
-
-	return parseParams(req, executor.NewEngineOptions(), fetchOpts)
+	return parseParams(req, executor.NewEngineOptions(), timeoutOpts, fetchOpts)
 }
 
 func TestParamParsing(t *testing.T) {
@@ -103,17 +105,10 @@ func TestInstantaneousParamParsing(t *testing.T) {
 	params.Add(queryParam, promQuery)
 	params.Add(timeParam, now.Format(time.RFC3339))
 	req.URL.RawQuery = params.Encode()
-	fetchOptsBuilder, err := handleroptions.NewFetchOptionsBuilder(
-		handleroptions.FetchOptionsBuilderOptions{
-			Timeout: 10 * time.Second,
-		})
-	require.NoError(t, err)
-	fetchOpts, err := fetchOptsBuilder.NewFetchOptions(req)
-	require.NoError(t, err)
 
 	r, err := parseInstantaneousParams(req, executor.NewEngineOptions(),
-		fetchOpts)
-	require.NoError(t, err, "unable to parse request")
+		timeoutOpts, storage.NewFetchOptions())
+	require.Nil(t, err, "unable to parse request")
 	require.Equal(t, promQuery, r.Query)
 }
 

@@ -34,6 +34,12 @@ import (
 	"go.uber.org/zap"
 )
 
+const (
+	// By default we use 6 buckets for the queue size histogram metrics
+	// to achieve a good balance between metric granularity and overhead.
+	defaultQueueSizeNumBuckets = 6
+)
+
 var (
 	errInstanceQueueClosed = errors.New("instance queue is closed")
 	errWriterQueueFull     = errors.New("writer queue is full")
@@ -95,9 +101,6 @@ type instanceQueue interface {
 	// Enqueue enqueues a data buffer.
 	Enqueue(buf protobuf.Buffer) error
 
-	// Size returns the number of items in the queue.
-	Size() int
-
 	// Close closes the queue, it blocks until the queue is drained.
 	Close() error
 }
@@ -151,11 +154,9 @@ func newInstanceQueue(instance placement.Instance, opts Options) instanceQueue {
 	}
 	q.writeFn = q.conn.Write
 
-	q.wg.Add(1)
-	go func() {
-		defer q.wg.Done()
-		q.drain()
-	}()
+	q.wg.Add(2)
+	go q.drain()
+	go q.reportQueueSize(iOpts.ReportInterval())
 
 	return q
 }
@@ -198,15 +199,15 @@ func (q *queue) Enqueue(buf protobuf.Buffer) error {
 func (q *queue) Close() error {
 	q.Lock()
 	if q.closed {
+		q.Unlock()
 		return errInstanceQueueClosed
 	}
 	q.closed = true
+	close(q.doneCh)
+	close(q.bufCh)
 	q.Unlock()
 
-	close(q.doneCh)
 	q.wg.Wait()
-
-	close(q.bufCh)
 	return nil
 }
 
@@ -217,7 +218,6 @@ func (q *queue) writeAndReset() {
 	if err := q.writeFn(q.buf); err != nil {
 		q.log.Error("error writing data",
 			zap.Int("buffer_size", len(q.buf)),
-			zap.String("target_instance_id", q.instance.ID()),
 			zap.String("target_instance", q.instance.Endpoint()),
 			zap.Error(err),
 		)
@@ -229,6 +229,7 @@ func (q *queue) writeAndReset() {
 }
 
 func (q *queue) drain() {
+	defer q.wg.Done()
 	defer q.conn.Close()
 	timer := time.NewTimer(q.batchFlushDeadline)
 	lastDrain := time.Now()
@@ -269,11 +270,24 @@ func (q *queue) drain() {
 	}
 }
 
-func (q *queue) Size() int {
-	return len(q.bufCh)
+func (q *queue) reportQueueSize(reportInterval time.Duration) {
+	defer q.wg.Done()
+
+	ticker := time.NewTicker(reportInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			q.metrics.queueLen.RecordValue(float64(len(q.bufCh)))
+		case <-q.doneCh:
+			return
+		}
+	}
 }
 
 type queueMetrics struct {
+	queueLen              tally.Histogram
 	enqueueSuccesses      tally.Counter
 	enqueueOldestDropped  tally.Counter
 	enqueueCurrentDropped tally.Counter
@@ -283,9 +297,15 @@ type queueMetrics struct {
 }
 
 func newQueueMetrics(s tally.Scope, queueSize int) queueMetrics {
+	numBuckets := defaultQueueSizeNumBuckets
+	if queueSize < numBuckets {
+		numBuckets = queueSize
+	}
+	buckets := tally.MustMakeLinearValueBuckets(0, float64(queueSize/numBuckets), numBuckets)
 	enqueueScope := s.Tagged(map[string]string{"action": "enqueue"})
 	connWriteScope := s.Tagged(map[string]string{"action": "conn-write"})
 	return queueMetrics{
+		queueLen:         s.Histogram("queue-length", buckets),
 		enqueueSuccesses: enqueueScope.Counter("successes"),
 		enqueueOldestDropped: enqueueScope.Tagged(map[string]string{"drop-type": "oldest"}).
 			Counter("dropped"),

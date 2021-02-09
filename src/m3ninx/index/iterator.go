@@ -1,4 +1,4 @@
-// Copyright (c) 2021  Uber Technologies, Inc.
+// Copyright (c) 2018 Uber Technologies, Inc.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -21,11 +21,17 @@
 package index
 
 import (
+	"errors"
+
 	"github.com/m3db/m3/src/m3ninx/doc"
 	"github.com/m3db/m3/src/m3ninx/postings"
 )
 
-type documentIterator struct {
+var (
+	errIteratorClosed = errors.New("iterator has been closed")
+)
+
+type idDocIterator struct {
 	retriever    DocRetriever
 	postingsIter postings.Iterator
 
@@ -35,45 +41,49 @@ type documentIterator struct {
 	err     error
 }
 
-// NewIterator returns a new Iterator
-func NewIterator(r DocRetriever, pi postings.Iterator) doc.Iterator {
-	return &documentIterator{
+// NewIDDocIterator returns a new NewIDDocIterator.
+func NewIDDocIterator(r DocRetriever, pi postings.Iterator) IDDocIterator {
+	return &idDocIterator{
 		retriever:    r,
 		postingsIter: pi,
 	}
 }
 
-func (e *documentIterator) Next() bool {
-	if e.closed || e.err != nil || !e.postingsIter.Next() {
+func (it *idDocIterator) Next() bool {
+	if it.closed || it.err != nil || !it.postingsIter.Next() {
 		return false
 	}
-	id := e.postingsIter.Current()
-	e.currID = id
+	id := it.postingsIter.Current()
+	it.currID = id
 
-	d, err := e.retriever.Doc(id)
+	d, err := it.retriever.Doc(id)
 	if err != nil {
-		e.err = err
+		it.err = err
 		return false
 	}
-	e.currDoc = d
+	it.currDoc = d
 	return true
 }
 
-func (e *documentIterator) Current() doc.Document {
-	return e.currDoc
+func (it *idDocIterator) Current() doc.Document {
+	return it.currDoc
 }
 
-func (e *documentIterator) Err() error {
-	return e.err
+func (it *idDocIterator) PostingsID() postings.ID {
+	return it.currID
 }
 
-func (e *documentIterator) Close() error {
-	if e.closed {
+func (it *idDocIterator) Err() error {
+	return it.err
+}
+
+func (it *idDocIterator) Close() error {
+	if it.closed {
 		return errIteratorClosed
 	}
-	e.closed = true
-	e.currDoc = doc.Document{}
-	e.currID = postings.ID(0)
-	err := e.postingsIter.Close()
+	it.closed = true
+	it.currDoc = doc.Document{}
+	it.currID = postings.ID(0)
+	err := it.postingsIter.Close()
 	return err
 }

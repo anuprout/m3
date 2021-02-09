@@ -669,7 +669,6 @@ func TestMappingRuleMappingRuleView(t *testing.T) {
 		LastUpdatedAtMillis: 67890,
 		LastUpdatedBy:       "someone-else",
 		DropPolicy:          res.DropPolicy,
-		Tags:                []models.Tag{},
 	}
 	require.Equal(t, expected, res)
 }
@@ -699,7 +698,6 @@ func TestNewMappingRuleHistory(t *testing.T) {
 			},
 			LastUpdatedAtMillis: 67890,
 			LastUpdatedBy:       "someone-else",
-			Tags:                []models.Tag{},
 		},
 		{
 			ID:            "12669817-13ae-40e6-ba2f-33087b262c68",
@@ -715,7 +713,6 @@ func TestNewMappingRuleHistory(t *testing.T) {
 			},
 			LastUpdatedAtMillis: 12345,
 			LastUpdatedBy:       "someone",
-			Tags:                []models.Tag{},
 		},
 	}
 	require.Equal(t, expected, history)

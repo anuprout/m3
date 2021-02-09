@@ -29,9 +29,7 @@ import (
 )
 
 var (
-	// ErrIncorrectHeader is an error when encoded tag byte sequence doesn't start with
-	// an expected magic number.
-	ErrIncorrectHeader               = errors.New("header magic number does not match expected value")
+	errIncorrectHeader               = errors.New("header magic number does not match expected value")
 	errInvalidByteStreamIDDecoding   = errors.New("internal error, invalid byte stream while decoding ID")
 	errInvalidByteStreamUintDecoding = errors.New("internal error, invalid byte stream while decoding uint")
 )
@@ -80,8 +78,8 @@ func (d *decoder) Reset(b checked.Bytes) {
 		return
 	}
 
-	if header != HeaderMagicNumber {
-		d.err = ErrIncorrectHeader
+	if header != headerMagicNumber {
+		d.err = errIncorrectHeader
 		return
 	}
 
@@ -131,7 +129,7 @@ func (d *decoder) decodeTag() error {
 	// safe to call Bytes() as d.current.Name has inc'd a ref
 	if len(d.currentTagName.Bytes()) == 0 {
 		d.releaseCurrent()
-		return ErrEmptyTagNameLiteral
+		return errEmptyTagNameLiteral
 	}
 
 	if err := d.decodeIDInto(d.currentTagValue); err != nil {

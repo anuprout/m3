@@ -21,9 +21,7 @@
 package aggregator
 
 import (
-	"sync"
 	"testing"
-	"time"
 
 	"github.com/m3db/m3/src/aggregator/client"
 	"github.com/m3db/m3/src/metrics/aggregation"
@@ -34,7 +32,6 @@ import (
 	"github.com/m3db/m3/src/metrics/policy"
 
 	"github.com/golang/mock/gomock"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/uber-go/tally"
 )
@@ -57,43 +54,11 @@ func TestForwardedWriterRegisterWriterClosed(t *testing.T) {
 		mt     = metric.CounterType
 		mid    = id.RawID("foo")
 		aggKey = testForwardedWriterAggregationKey
-		closed = make(chan struct{})
-		wg     sync.WaitGroup
 	)
+	w.Close()
 
-	c.EXPECT().Flush().AnyTimes()
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-
-		for {
-			var err error
-
-			assert.NotPanics(t, func() {
-				if err = w.Flush(); err != nil {
-					require.Equal(t, errForwardedWriterClosed, err)
-				}
-			})
-
-			if err != nil {
-				break
-			}
-			time.Sleep(1 * time.Microsecond)
-		}
-
-		assert.NotPanics(t, func() {
-			_, _, err := w.Register(mt, mid, aggKey)
-			require.Equal(t, errForwardedWriterClosed, err)
-
-			err = w.Flush()
-			require.Equal(t, errForwardedWriterClosed, err)
-		})
-	}()
-
-	require.NoError(t, w.Close())
-	close(closed)
-	wg.Wait()
+	_, _, err := w.Register(mt, mid, aggKey)
+	require.Equal(t, errForwardedWriterClosed, err)
 }
 
 func TestForwardedWriterRegisterNewAggregation(t *testing.T) {
@@ -220,7 +185,7 @@ func TestForwardedWriterUnregisterWriterClosed(t *testing.T) {
 		aggKey = testForwardedWriterAggregationKey
 	)
 
-	require.NoError(t, w.Close())
+	w.Close()
 	require.Equal(t, errForwardedWriterClosed, w.Unregister(mt, mid, aggKey))
 }
 
@@ -425,10 +390,12 @@ func TestForwardedWriterCloseWriterClosed(t *testing.T) {
 		w = newForwardedWriter(0, c, tally.NoopScope)
 	)
 
-	// Close the writer
+	// Close the writer and validate that the fields are nil'ed out.
 	require.NoError(t, w.Close())
 	fw := w.(*forwardedWriter)
-	require.True(t, fw.closed.Load())
+	require.True(t, fw.closed)
+	require.Nil(t, fw.client)
+	require.Nil(t, fw.aggregations)
 
 	// Closing the writer a second time results in an error.
 	require.Equal(t, errForwardedWriterClosed, w.Close())

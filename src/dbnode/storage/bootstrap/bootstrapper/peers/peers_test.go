@@ -46,8 +46,8 @@ func TestNewPeersBootstrapper(t *testing.T) {
 	defer ctrl.Finish()
 
 	idxOpts := index.NewOptions()
-	compactor, err := compaction.NewCompactor(idxOpts.MetadataArrayPool(),
-		index.MetadataArrayPoolCapacity,
+	compactor, err := compaction.NewCompactor(idxOpts.DocumentArrayPool(),
+		index.DocumentArrayPoolCapacity,
 		idxOpts.SegmentBuilderOptions(),
 		idxOpts.FSTSegmentOptions(),
 		compaction.CompactorOptions{

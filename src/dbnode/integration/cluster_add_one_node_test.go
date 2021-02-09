@@ -112,17 +112,17 @@ func testClusterAddOneNode(t *testing.T, verifyCommitlogCanBootstrapAfterNodeJoi
 	topoOpts := topology.NewDynamicOptions().
 		SetConfigServiceClient(fake.NewM3ClusterClient(svcs, nil))
 	topoInit := topology.NewDynamicInitializer(topoOpts)
-	setupOpts := []BootstrappableTestSetupOptions{
+	setupOpts := []bootstrappableTestSetupOptions{
 		{
-			DisablePeersBootstrapper: true,
-			TopologyInitializer:      topoInit,
+			disablePeersBootstrapper: true,
+			topologyInitializer:      topoInit,
 		},
 		{
-			DisablePeersBootstrapper: false,
-			TopologyInitializer:      topoInit,
+			disablePeersBootstrapper: false,
+			topologyInitializer:      topoInit,
 		},
 	}
-	setups, closeFn := NewDefaultBootstrappableTestSetups(t, opts, setupOpts)
+	setups, closeFn := newDefaultBootstrappableTestSetups(t, opts, setupOpts)
 	defer closeFn()
 
 	// Write test data for first node.

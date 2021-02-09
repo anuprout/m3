@@ -46,7 +46,7 @@ func TestShardInsertNamespaceIndex(t *testing.T) {
 	opts := DefaultTestOptions()
 
 	lock := sync.Mutex{}
-	indexWrites := []doc.Metadata{}
+	indexWrites := []doc.Document{}
 
 	now := time.Now()
 	blockSize := namespace.NewIndexOptions().BlockSize()

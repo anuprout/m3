@@ -87,8 +87,7 @@ const (
 )
 
 var (
-	// DefaultIntegrationTestRetentionOpts are default integration test retention options.
-	DefaultIntegrationTestRetentionOpts = retention.NewOptions().SetRetentionPeriod(6 * time.Hour)
+	defaultIntegrationTestRetentionOpts = retention.NewOptions().SetRetentionPeriod(6 * time.Hour)
 )
 
 // TestOptions contains integration test options.
@@ -293,12 +292,6 @@ type TestOptions interface {
 
 	// ReportInterval returns the time between reporting metrics within the system.
 	ReportInterval() time.Duration
-
-	// SetStorageOptsFn sets the StorageOpts modifier.
-	SetStorageOptsFn(StorageOption) TestOptions
-
-	// StorageOptsFn returns the StorageOpts modifier.
-	StorageOptsFn() StorageOption
 }
 
 type options struct {
@@ -333,7 +326,6 @@ type options struct {
 	assertEqual                        assertTestDataEqual
 	nowFn                              func() time.Time
 	reportInterval                     time.Duration
-	storageOptsFn                      StorageOption
 }
 
 // NewTestOptions returns a new set of integration test options.
@@ -341,7 +333,7 @@ func NewTestOptions(t *testing.T) TestOptions {
 	var namespaces []namespace.Metadata
 	nsOpts := namespace.NewOptions().
 		SetRepairEnabled(false).
-		SetRetentionOptions(DefaultIntegrationTestRetentionOpts)
+		SetRetentionOptions(defaultIntegrationTestRetentionOpts)
 
 	for _, ns := range testNamespaces {
 		md, err := namespace.NewMetadata(ns, nsOpts)
@@ -682,14 +674,4 @@ func (o *options) SetReportInterval(value time.Duration) TestOptions {
 
 func (o *options) ReportInterval() time.Duration {
 	return o.reportInterval
-}
-
-func (o *options) SetStorageOptsFn(storageOptsFn StorageOption) TestOptions {
-	opts := *o
-	opts.storageOptsFn = storageOptsFn
-	return &opts
-}
-
-func (o *options) StorageOptsFn() StorageOption {
-	return o.storageOptsFn
 }

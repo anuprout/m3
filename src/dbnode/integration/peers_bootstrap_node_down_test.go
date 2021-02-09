@@ -57,12 +57,12 @@ func TestPeersBootstrapNodeDown(t *testing.T) {
 		SetUseTChannelClientForWriting(true).
 		SetUseTChannelClientForReading(true)
 
-	setupOpts := []BootstrappableTestSetupOptions{
-		{DisablePeersBootstrapper: true},
-		{DisablePeersBootstrapper: true},
-		{DisablePeersBootstrapper: false},
+	setupOpts := []bootstrappableTestSetupOptions{
+		{disablePeersBootstrapper: true},
+		{disablePeersBootstrapper: true},
+		{disablePeersBootstrapper: false},
 	}
-	setups, closeFn := NewDefaultBootstrappableTestSetups(t, opts, setupOpts)
+	setups, closeFn := newDefaultBootstrappableTestSetups(t, opts, setupOpts)
 	defer closeFn()
 
 	// Write test data for first node

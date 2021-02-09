@@ -29,25 +29,19 @@ import (
 	"testing"
 	"time"
 
+	"github.com/m3db/m3/src/query/api/v1/handler/prometheus"
 	"github.com/m3db/m3/src/query/api/v1/handler/prometheus/handleroptions"
 	"github.com/m3db/m3/src/query/api/v1/handler/prometheus/native"
 	"github.com/m3db/m3/src/query/api/v1/options"
 	"github.com/m3db/m3/src/query/executor"
 	xerrors "github.com/m3db/m3/src/x/errors"
 	"github.com/m3db/m3/src/x/instrument"
-
 	"github.com/prometheus/prometheus/pkg/labels"
 	promstorage "github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/require"
 )
 
 const promQuery = `http_requests_total{job="prometheus",group="canary"}`
-
-const (
-	queryParam = "query"
-	startParam = "start"
-	endParam   = "end"
-)
 
 var testPromQLEngine = newMockPromQLEngine()
 
@@ -58,11 +52,15 @@ type testHandlers struct {
 }
 
 func setupTest(t *testing.T) testHandlers {
-	fetchOptsBuilderCfg := handleroptions.FetchOptionsBuilderOptions{
-		Timeout: 15 * time.Second,
+	opts := Options{
+		PromQLEngine: testPromQLEngine,
 	}
-	fetchOptsBuilder, err := handleroptions.NewFetchOptionsBuilder(fetchOptsBuilderCfg)
-	require.NoError(t, err)
+	timeoutOpts := &prometheus.TimeoutOpts{
+		FetchTimeout: 15 * time.Second,
+	}
+
+	fetchOptsBuilderCfg := handleroptions.FetchOptionsBuilderOptions{}
+	fetchOptsBuilder := handleroptions.NewFetchOptionsBuilder(fetchOptsBuilderCfg)
 	instrumentOpts := instrument.NewOptions()
 	engineOpts := executor.NewEngineOptions().
 		SetLookbackDuration(time.Minute).
@@ -70,22 +68,11 @@ func setupTest(t *testing.T) testHandlers {
 	engine := executor.NewEngine(engineOpts)
 	hOpts := options.EmptyHandlerOptions().
 		SetFetchOptionsBuilder(fetchOptsBuilder).
-		SetEngine(engine)
+		SetEngine(engine).
+		SetTimeoutOpts(timeoutOpts)
 	queryable := &mockQueryable{}
-	readHandler, err := newReadHandler(hOpts, opts{
-		promQLEngine: testPromQLEngine,
-		queryable:    queryable,
-		instant:      false,
-		newQueryFn:   newRangeQueryFn(testPromQLEngine, queryable),
-	})
-	require.NoError(t, err)
-	readInstantHandler, err := newReadHandler(hOpts, opts{
-		promQLEngine: testPromQLEngine,
-		queryable:    queryable,
-		instant:      true,
-		newQueryFn:   newInstantQueryFn(testPromQLEngine, queryable),
-	})
-	require.NoError(t, err)
+	readHandler := newReadHandler(opts, hOpts, queryable)
+	readInstantHandler := newReadInstantHandler(opts, hOpts, queryable)
 	return testHandlers{
 		queryable:          queryable,
 		readHandler:        readHandler,
@@ -98,7 +85,7 @@ func defaultParams() url.Values {
 	now := time.Now()
 	vals.Add(queryParam, promQuery)
 	vals.Add(startParam, now.Format(time.RFC3339))
-	vals.Add(endParam, now.Add(time.Hour).Format(time.RFC3339))
+	vals.Add(endParam, string(now.Add(time.Hour).Format(time.RFC3339)))
 	vals.Add(handleroptions.StepParam, (time.Duration(10) * time.Second).String())
 	return vals
 }
@@ -107,7 +94,7 @@ func defaultParamsWithoutQuery() url.Values {
 	vals := url.Values{}
 	now := time.Now()
 	vals.Add(startParam, now.Format(time.RFC3339))
-	vals.Add(endParam, now.Add(time.Hour).Format(time.RFC3339))
+	vals.Add(endParam, string(now.Add(time.Hour).Format(time.RFC3339)))
 	vals.Add(handleroptions.StepParam, (time.Duration(10) * time.Second).String())
 	return vals
 }

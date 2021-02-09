@@ -31,14 +31,13 @@ import (
 	"github.com/m3db/m3/src/dbnode/persist"
 	"github.com/m3db/m3/src/dbnode/persist/fs"
 	"github.com/m3db/m3/src/dbnode/persist/fs/commitlog"
-	"github.com/m3db/m3/src/dbnode/persist/schema"
+	"github.com/m3db/m3/src/dbnode/persist/fs/wide"
 	"github.com/m3db/m3/src/dbnode/runtime"
 	"github.com/m3db/m3/src/dbnode/sharding"
 	"github.com/m3db/m3/src/dbnode/storage/block"
 	"github.com/m3db/m3/src/dbnode/storage/bootstrap"
 	"github.com/m3db/m3/src/dbnode/storage/bootstrap/result"
 	"github.com/m3db/m3/src/dbnode/storage/index"
-	"github.com/m3db/m3/src/dbnode/storage/limits"
 	"github.com/m3db/m3/src/dbnode/storage/repair"
 	"github.com/m3db/m3/src/dbnode/storage/series"
 	"github.com/m3db/m3/src/dbnode/storage/series/lookup"
@@ -185,18 +184,19 @@ type Database interface {
 		start time.Time,
 		shards []uint32,
 		iterOpts index.IterationOptions,
-	) ([]xio.WideEntry, error) // FIXME: change when exact type known.
+	) ([]xio.IndexChecksum, error) // FIXME: change when exact type known.
 
-	// BatchProcessWideQuery runs the given query against the namespace index,
-	// iterating in a batchwise fashion across all matching IDs, applying the given
-	// IDBatchProcessor batch processing function to each ID discovered.
-	BatchProcessWideQuery(
+	// ReadMismatches performs a wide blockwise query that applies a received
+	// index checksum block batch.
+	ReadMismatches(
 		ctx context.Context,
-		n Namespace,
+		namespace ident.ID,
 		query index.Query,
-		batchProcessor IDBatchProcessor,
-		opts index.WideQueryOptions,
-	) error
+		mismatchChecker wide.EntryChecksumMismatchChecker,
+		queryStart time.Time,
+		shards []uint32,
+		iterOpts index.IterationOptions,
+	) ([]wide.ReadMismatch, error) // TODO: update this type when reader hooked up
 
 	// FetchBlocks retrieves data blocks for a given id and a list of block
 	// start times.
@@ -297,27 +297,6 @@ type Namespace interface {
 
 	// SetReadOnly sets the value of ReadOnly option.
 	SetReadOnly(value bool)
-
-	// DocRef returns the doc if already present in a namespace shard.
-	DocRef(id ident.ID) (doc.Metadata, bool, error)
-
-	// WideQueryIDs resolves the given query into known IDs in s streaming
-	// fashion.
-	WideQueryIDs(
-		ctx context.Context,
-		query index.Query,
-		collector chan *ident.IDBatch,
-		opts index.WideQueryOptions,
-	) error
-
-	// FetchWideEntry retrieves the wide entry for an ID for the
-	// block at time start.
-	FetchWideEntry(
-		ctx context.Context,
-		id ident.ID,
-		blockStart time.Time,
-		filter schema.WideEntryFilter,
-	) (block.StreamedWideEntry, error)
 }
 
 // NamespacesByID is a sortable slice of namespaces by ID.
@@ -380,6 +359,14 @@ type databaseNamespace interface {
 		opts index.QueryOptions,
 	) (index.QueryResult, error)
 
+	// WideQueryIDs resolves the given query into known IDs in s streaming fashion.
+	WideQueryIDs(
+		ctx context.Context,
+		query index.Query,
+		collector chan *ident.IDBatch,
+		opts index.WideQueryOptions,
+	) error
+
 	// AggregateQuery resolves the given query into aggregated tags.
 	AggregateQuery(
 		ctx context.Context,
@@ -393,6 +380,23 @@ type databaseNamespace interface {
 		id ident.ID,
 		start, end time.Time,
 	) ([][]xio.BlockReader, error)
+
+	// FetchIndexChecksum retrieves the index checksum for an ID for the
+	// block at time start.
+	FetchIndexChecksum(
+		ctx context.Context,
+		id ident.ID,
+		blockStart time.Time,
+	) (block.StreamedChecksum, error)
+
+	// FetchReadMismatch retrieves the read mismatches for an ID for the
+	// block at time start, with the given batchReader.
+	FetchReadMismatch(
+		ctx context.Context,
+		mismatchChecker wide.EntryChecksumMismatchChecker,
+		id ident.ID,
+		blockStart time.Time,
+	) (wide.StreamedMismatch, error)
 
 	// FetchBlocks retrieves data blocks for a given id and a list of block
 	// start times.
@@ -470,11 +474,7 @@ type databaseNamespace interface {
 	WritePendingIndexInserts(pending []writes.PendingIndexInsert) error
 
 	// AggregateTiles does large tile aggregation from source namespace into this namespace.
-	AggregateTiles(
-		ctx context.Context,
-		sourceNs databaseNamespace,
-		opts AggregateTilesOptions,
-	) (int64, error)
+	AggregateTiles(sourceNs databaseNamespace, opts AggregateTilesOptions) (int64, error)
 
 	// ReadableShardAt returns a shard of this namespace by shardID.
 	ReadableShardAt(shardID uint32) (databaseShard, namespace.Context, error)
@@ -508,13 +508,6 @@ type Shard interface {
 
 	// BootstrapState returns the shards' bootstrap state.
 	BootstrapState() BootstrapState
-
-	// ScanData performs a "full table scan" on the given block,
-	// calling processor function on every entry read.
-	ScanData(
-		blockStart time.Time,
-		processor fs.DataEntryProcessor,
-	) error
 }
 
 type databaseShard interface {
@@ -561,15 +554,23 @@ type databaseShard interface {
 		nsCtx namespace.Context,
 	) ([][]xio.BlockReader, error)
 
-	// FetchWideEntry retrieves wide entry for an ID for the
-	// block at time start.
-	FetchWideEntry(
+	// FetchIndexChecksum retrieves the index checksum for an ID.
+	FetchIndexChecksum(
 		ctx context.Context,
 		id ident.ID,
 		blockStart time.Time,
-		filter schema.WideEntryFilter,
 		nsCtx namespace.Context,
-	) (block.StreamedWideEntry, error)
+	) (block.StreamedChecksum, error)
+
+	// FetchReadMismatch retrieves the read mismatches for an ID for the
+	// block at time start, with the given batchReader.
+	FetchReadMismatch(
+		ctx context.Context,
+		mismatchChecker wide.EntryChecksumMismatchChecker,
+		id ident.ID,
+		blockStart time.Time,
+		nsCtx namespace.Context,
+	) (wide.StreamedMismatch, error)
 
 	// FetchBlocks retrieves data blocks for a given id and a list of block
 	// start times.
@@ -627,7 +628,7 @@ type databaseShard interface {
 	// ColdFlush flushes the unflushed ColdWrites in this shard.
 	ColdFlush(
 		flush persist.FlushPreparer,
-		resources coldFlushReusableResources,
+		resources coldFlushReuseableResources,
 		nsCtx namespace.Context,
 		onFlush persist.OnFlushSeries,
 	) (ShardColdFlush, error)
@@ -669,19 +670,17 @@ type databaseShard interface {
 	) (SeriesReadWriteRef, error)
 
 	// DocRef returns the doc if already present in a shard series.
-	DocRef(id ident.ID) (doc.Metadata, bool, error)
+	DocRef(id ident.ID) (doc.Document, bool, error)
 
 	// AggregateTiles does large tile aggregation from source shards into this shard.
 	AggregateTiles(
-		ctx context.Context,
-		sourceNs Namespace,
-		targetNs Namespace,
-		shardID uint32,
+		sourceNsID ident.ID,
+		sourceShardID uint32,
 		blockReaders []fs.DataFileSetReader,
 		writer fs.StreamingWriter,
 		sourceBlockVolumes []shardBlockVolume,
-		onFlushSeries persist.OnFlushSeries,
 		opts AggregateTilesOptions,
+		targetSchemaDesc namespace.SchemaDescr,
 	) (int64, error)
 
 	// LatestVolume returns the latest volume for the combination of shard+blockStart.
@@ -777,6 +776,9 @@ type NamespaceIndex interface {
 	// the owned shards of the database. Also returns a callback to be called when
 	// cold flushing completes to perform houskeeping.
 	ColdFlush(shards []databaseShard) (OnColdFlushDone, error)
+
+	// SetExtendedRetentionPeriod allows to extend index retention beyond the retention of the namespace it belongs to.
+	SetExtendedRetentionPeriod(period time.Duration)
 
 	// DebugMemorySegments allows for debugging memory segments.
 	DebugMemorySegments(opts DebugMemorySegmentsOptions) error
@@ -1022,9 +1024,6 @@ type OnColdFlushNamespace interface {
 	persist.OnFlushSeries
 	Done() error
 }
-
-// OptionTransform transforms given Options.
-type OptionTransform func(Options) Options
 
 // Options represents the options for storage.
 type Options interface {
@@ -1275,24 +1274,6 @@ type Options interface {
 	// OnColdFlush returns the on cold flush processor.
 	OnColdFlush() OnColdFlush
 
-	// SetIterationOptions sets iteration options.
-	SetIterationOptions(index.IterationOptions) Options
-
-	// IterationOptions returns iteration options.
-	IterationOptions() index.IterationOptions
-
-	// SetForceColdWritesEnabled sets options for forcing cold writes.
-	SetForceColdWritesEnabled(value bool) Options
-
-	// SetForceColdWritesEnabled returns options for forcing cold writes.
-	ForceColdWritesEnabled() bool
-
-	// SetSourceLoggerBuilder sets the limit source logger builder.
-	SetSourceLoggerBuilder(value limits.SourceLoggerBuilder) Options
-
-	// SetSourceLoggerBuilder returns the limit source logger builder.
-	SourceLoggerBuilder() limits.SourceLoggerBuilder
-
 	// SetMemoryTracker sets the MemoryTracker.
 	SetMemoryTracker(memTracker MemoryTracker) Options
 
@@ -1348,12 +1329,6 @@ type Options interface {
 
 	// NamespaceHooks returns the NamespaceHooks.
 	NamespaceHooks() NamespaceHooks
-
-	// SetTileAggregator sets the TileAggregator.
-	SetTileAggregator(aggregator TileAggregator) Options
-
-	// TileAggregator returns the TileAggregator.
-	TileAggregator() TileAggregator
 }
 
 // MemoryTracker tracks memory.
@@ -1425,26 +1400,9 @@ type AggregateTilesOptions struct {
 	InsOptions instrument.Options
 }
 
-// TileAggregator is the interface for AggregateTiles.
-type TileAggregator interface {
-	// AggregateTiles does tile aggregation.
-	AggregateTiles(
-		ctx context.Context,
-		sourceNs, targetNs Namespace,
-		shardID uint32,
-		readers []fs.DataFileSetReader,
-		writer fs.StreamingWriter,
-		onFlushSeries persist.OnFlushSeries,
-		opts AggregateTilesOptions,
-	) (int64, error)
-}
-
-// NewTileAggregatorFn creates a new TileAggregator.
-type NewTileAggregatorFn func(iOpts instrument.Options) TileAggregator
-
 // NamespaceHooks allows dynamic plugging into the namespace lifecycle.
 type NamespaceHooks interface {
-	// OnCreatedNamespace gets invoked after each namespace is initialized.
+	// OnCreatedNamespace gets invoked after each namespace is created.
 	OnCreatedNamespace(Namespace, GetNamespaceFn) error
 }
 

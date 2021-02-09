@@ -64,13 +64,11 @@ func TestFieldsTermsIteratorSimple(t *testing.T) {
 
 func TestFieldsTermsIteratorReuse(t *testing.T) {
 	pairs := []pair{
-		{"a", "b"},
-		{"a", "c"},
-		{"d", "e"},
-		{"d", "f"},
-		{"g", "h"},
-		{"i", "j"},
-		{"k", "l"},
+		pair{"a", "b"}, pair{"a", "c"},
+		pair{"d", "e"}, pair{"d", "f"},
+		pair{"g", "h"},
+		pair{"i", "j"},
+		pair{"k", "l"},
 	}
 
 	iter, err := newFieldsAndTermsIterator(nil, fieldsAndTermsIteratorOpts{})
@@ -93,10 +91,9 @@ func TestFieldsTermsIteratorReuse(t *testing.T) {
 	require.NoError(t, err)
 	slice := toSlice(t, iter)
 	requireSlicesEqual(t, []pair{
-		{"d", "e"},
-		{"d", "f"},
-		{"g", "h"},
-		{"i", "j"},
+		pair{"d", "e"}, pair{"d", "f"},
+		pair{"g", "h"},
+		pair{"i", "j"},
 	}, slice)
 
 	err = iter.Reset(reader, fieldsAndTermsIteratorOpts{
@@ -108,21 +105,18 @@ func TestFieldsTermsIteratorReuse(t *testing.T) {
 	require.NoError(t, err)
 	slice = toSlice(t, iter)
 	requireSlicesEqual(t, []pair{
-		{"a", "b"},
-		{"a", "c"},
-		{"k", "l"},
+		pair{"a", "b"}, pair{"a", "c"},
+		pair{"k", "l"},
 	}, slice)
 }
 
 func TestFieldsTermsIteratorSimpleSkip(t *testing.T) {
 	input := []pair{
-		{"a", "b"},
-		{"a", "c"},
-		{"d", "e"},
-		{"d", "f"},
-		{"g", "h"},
-		{"i", "j"},
-		{"k", "l"},
+		pair{"a", "b"}, pair{"a", "c"},
+		pair{"d", "e"}, pair{"d", "f"},
+		pair{"g", "h"},
+		pair{"i", "j"},
+		pair{"k", "l"},
 	}
 	s := newFieldsTermsIterSetup(input...)
 	reader, err := s.asSegment(t).Reader()
@@ -137,19 +131,16 @@ func TestFieldsTermsIteratorSimpleSkip(t *testing.T) {
 	require.NoError(t, err)
 	slice := toSlice(t, iter)
 	requireSlicesEqual(t, []pair{
-		{"d", "e"},
-		{"d", "f"},
-		{"g", "h"},
-		{"i", "j"},
+		pair{"d", "e"}, pair{"d", "f"},
+		pair{"g", "h"},
+		pair{"i", "j"},
 	}, slice)
 }
 
 func TestFieldsTermsIteratorTermsOnly(t *testing.T) {
 	s := newFieldsTermsIterSetup(
-		pair{"a", "b"},
-		pair{"a", "c"},
-		pair{"d", "e"},
-		pair{"d", "f"},
+		pair{"a", "b"}, pair{"a", "c"},
+		pair{"d", "e"}, pair{"d", "f"},
 		pair{"g", "h"},
 		pair{"i", "j"},
 		pair{"k", "l"},
@@ -161,11 +152,7 @@ func TestFieldsTermsIteratorTermsOnly(t *testing.T) {
 	require.NoError(t, err)
 	slice := toSlice(t, iter)
 	requireSlicesEqual(t, []pair{
-		{"a", ""},
-		{"d", ""},
-		{"g", ""},
-		{"i", ""},
-		{"k", ""},
+		pair{"a", ""}, pair{"d", ""}, pair{"g", ""}, pair{"i", ""}, pair{"k", ""},
 	}, slice)
 }
 
@@ -179,7 +166,7 @@ func TestFieldsTermsIteratorEmptyTerm(t *testing.T) {
 	iter, err := newFieldsAndTermsIterator(reader, fieldsAndTermsIteratorOpts{iterateTerms: false})
 	require.NoError(t, err)
 	slice := toSlice(t, iter)
-	requireSlicesEqual(t, []pair{{"a", ""}}, slice)
+	requireSlicesEqual(t, []pair{pair{"a", ""}}, slice)
 }
 
 func TestFieldsTermsIteratorEmptyTermInclude(t *testing.T) {
@@ -196,38 +183,38 @@ func TestFieldsTermsIteratorEmptyTermInclude(t *testing.T) {
 }
 
 func TestFieldsTermsIteratorIterateTermsAndRestrictByQuery(t *testing.T) {
-	testDocs := []doc.Metadata{
-		{
+	testDocs := []doc.Document{
+		doc.Document{
 			Fields: []doc.Field{
-				{
+				doc.Field{
 					Name:  []byte("fruit"),
 					Value: []byte("banana"),
 				},
-				{
+				doc.Field{
 					Name:  []byte("color"),
 					Value: []byte("yellow"),
 				},
 			},
 		},
-		{
+		doc.Document{
 			Fields: []doc.Field{
-				{
+				doc.Field{
 					Name:  []byte("fruit"),
 					Value: []byte("apple"),
 				},
-				{
+				doc.Field{
 					Name:  []byte("color"),
 					Value: []byte("red"),
 				},
 			},
 		},
-		{
+		doc.Document{
 			Fields: []doc.Field{
-				{
+				doc.Field{
 					Name:  []byte("fruit"),
 					Value: []byte("pineapple"),
 				},
-				{
+				doc.Field{
 					Name:  []byte("color"),
 					Value: []byte("yellow"),
 				},
@@ -263,10 +250,10 @@ func TestFieldsTermsIteratorIterateTermsAndRestrictByQuery(t *testing.T) {
 	require.NoError(t, err)
 	slice := toSlice(t, iter)
 	requireSlicesEqual(t, []pair{
-		{"color", "red"},
-		{"color", "yellow"},
-		{"fruit", "apple"},
-		{"fruit", "pineapple"},
+		pair{"color", "red"},
+		pair{"color", "yellow"},
+		pair{"fruit", "apple"},
+		pair{"fruit", "pineapple"},
 	}, slice)
 }
 
@@ -395,12 +382,12 @@ type fieldsTermsIterSetup struct {
 }
 
 func (s *fieldsTermsIterSetup) asSegment(t *testing.T) segment.Segment {
-	docs := make([]doc.Metadata, 0, len(s.fields))
+	docs := make([]doc.Document, 0, len(s.fields))
 	for _, f := range s.fields {
-		docs = append(docs, doc.Metadata{
+		docs = append(docs, doc.Document{
 			ID: []byte(fmt.Sprintf("id_%v_%v", f.Name, f.Value)),
 			Fields: []doc.Field{
-				{
+				doc.Field{
 					Name:  []byte(f.Name),
 					Value: []byte(f.Value),
 				},
