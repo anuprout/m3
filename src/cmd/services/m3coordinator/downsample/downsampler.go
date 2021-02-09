@@ -222,6 +222,6 @@ func (d *downsampler) OnUpdate(namespaces m3.ClusterNamespaces) {
 	d.metricsAppenderOpts.defaultStagedMetadatasProtos = defaultStagedMetadatasProtos
 	// Can only downsample when aggregated namespaces are available.
 	d.enabled = hasAggregatedNamespaces && !isAnyAggNamespaceDisabled
-	logger.Info(fmt.Sprintf("Downsample enabled: %v", d.enabled))
+	logger.Info(fmt.Sprintf("Downsampler enabled: %v", d.enabled))
 	d.Unlock()
 }
