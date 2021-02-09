@@ -31,11 +31,9 @@ import (
 
 	"github.com/m3db/m3/src/dbnode/storage/index"
 	"github.com/m3db/m3/src/dbnode/storage/index/convert"
-	testutil "github.com/m3db/m3/src/dbnode/test"
 	"github.com/m3db/m3/src/m3ninx/doc"
 	"github.com/m3db/m3/src/m3ninx/idx"
 	"github.com/m3db/m3/src/x/context"
-	"github.com/m3db/m3/src/x/ident"
 	xresource "github.com/m3db/m3/src/x/resource"
 	xsync "github.com/m3db/m3/src/x/sync"
 	xtest "github.com/m3db/m3/src/x/test"
@@ -152,7 +150,7 @@ func testNamespaceIndexHighConcurrentQueries(
 
 	var (
 		idsPerBlock     = 16
-		expectedResults = make(map[string]doc.Metadata)
+		expectedResults = make(map[string]doc.Document)
 		blockStarts     []time.Time
 		blockIdx        = -1
 	)
@@ -182,7 +180,7 @@ func testNamespaceIndexHighConcurrentQueries(
 		})
 		for i := 0; i < idsPerBlock; i++ {
 			id := fmt.Sprintf("foo.block_%d.id_%d", blockIdx, i)
-			doc := doc.Metadata{
+			doc := doc.Document{
 				ID: []byte(id),
 				Fields: []doc.Field{
 					{
@@ -346,24 +344,23 @@ func testNamespaceIndexHighConcurrentQueries(
 
 				// Read the results concurrently too
 				hits := make(map[string]struct{}, results.Results.Size())
-				id := ident.NewReusableBytesID()
 				for _, entry := range results.Results.Map().Iter() {
-					id.Reset(entry.Key())
-					tags := testutil.DocumentToTagIter(t, entry.Value())
-					doc, err := convert.FromSeriesIDAndTagIter(id, tags)
+					id := entry.Key().String()
+
+					doc, err := convert.FromSeriesIDAndTagIter(entry.Key(), entry.Value())
 					require.NoError(t, err)
 					if err != nil {
 						continue // this will fail the test anyway, but don't want to panic
 					}
 
-					expectedDoc, ok := expectedResults[id.String()]
+					expectedDoc, ok := expectedResults[id]
 					require.True(t, ok)
 					if !ok {
 						continue // this will fail the test anyway, but don't want to panic
 					}
 
 					require.Equal(t, expectedDoc, doc)
-					hits[id.String()] = struct{}{}
+					hits[id] = struct{}{}
 				}
 				expectedHits := idsPerBlock * (k + 1)
 				require.Equal(t, expectedHits, len(hits))

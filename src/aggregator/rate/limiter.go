@@ -21,37 +21,42 @@
 package rate
 
 import (
+	"sync"
+	"sync/atomic"
 	"time"
 
-	"go.uber.org/atomic"
-	"golang.org/x/sys/cpu"
-
-	xtime "github.com/m3db/m3/src/x/time"
+	"github.com/m3db/m3/src/x/clock"
 )
 
 var (
-	zeroTime = xtime.UnixNano(0)
+	zeroTime = time.Unix(0, 0)
 )
 
 // Limiter is a simple rate limiter to control how frequently events are allowed to happen.
-// It trades some accuracy on resets for speed.
 type Limiter struct {
-	limitPerSecond atomic.Int64
-	alignedLast    atomic.Int64
-	_              cpu.CacheLinePad // prevent false sharing
-	allowed        atomic.Int64
+	sync.RWMutex
+
+	limitPerSecond int64
+	nowFn          clock.NowFn
+
+	alignedLast time.Time
+	allowed     int64
 }
 
 // NewLimiter creates a new rate limiter.
-func NewLimiter(l int64) *Limiter {
-	limiter := &Limiter{}
-	limiter.limitPerSecond.Store(l)
-	return limiter
+func NewLimiter(l int64, fn clock.NowFn) *Limiter {
+	return &Limiter{
+		limitPerSecond: l,
+		nowFn:          fn,
+	}
 }
 
-// Limit returns the current limit. A zero limit means no limit is set.
+// Limit returns the current limit.
 func (l *Limiter) Limit() int64 {
-	return l.limitPerSecond.Load()
+	l.RLock()
+	limit := l.limitPerSecond
+	l.RUnlock()
+	return limit
 }
 
 // IsAllowed returns whether n events may happen now.
@@ -59,33 +64,34 @@ func (l *Limiter) Limit() int64 {
 // requests in the same second from going through. This is a non-issue if the limit
 // is much bigger than the typical batch size, which is indeed the case in the aggregation
 // layer as each batch size is usually fairly small.
-// The limiter is racy on window changes, and can be overly aggressive rejecting requests.
-// As the limits are usually at least 10k+, the error is worth the speedup.
-func (l *Limiter) IsAllowed(n int64, now xtime.UnixNano) bool {
-	limit := l.Limit()
-	if limit <= 0 {
-		return true
+func (l *Limiter) IsAllowed(n int64) bool {
+	alignedNow := l.nowFn().Truncate(time.Second)
+	l.RLock()
+	if !alignedNow.After(l.alignedLast) {
+		isAllowed := atomic.AddInt64(&l.allowed, n) <= l.limitPerSecond
+		l.RUnlock()
+		return isAllowed
 	}
+	l.RUnlock()
 
-	var (
-		allowed     = l.allowed.Add(n)
-		alignedNow  = now - now%xtime.UnixNano(time.Second) // truncate to second boundary
-		alignedLast = xtime.UnixNano(l.alignedLast.Load())
-	)
-
-	if alignedNow > alignedLast && l.alignedLast.CAS(int64(alignedLast), int64(alignedNow)) {
-		l.allowed.Store(n)
-		allowed = n
+	l.Lock()
+	if !alignedNow.After(l.alignedLast) {
+		isAllowed := atomic.AddInt64(&l.allowed, n) <= l.limitPerSecond
+		l.Unlock()
+		return isAllowed
 	}
-
-	return allowed <= limit
+	l.alignedLast = alignedNow
+	l.allowed = n
+	isAllowed := l.allowed <= l.limitPerSecond
+	l.Unlock()
+	return isAllowed
 }
 
-// Reset resets the internal state. It does not reset all the values atomically,
-// but it should not be a problem, as dynamic rate limits in aggregator
-// are usually reset under a lock.
+// Reset resets the internal state.
 func (l *Limiter) Reset(limit int64) {
-	l.allowed.Store(0)
-	l.alignedLast.Store(int64(zeroTime))
-	l.limitPerSecond.Store(limit)
+	l.Lock()
+	l.alignedLast = zeroTime
+	l.allowed = 0
+	l.limitPerSecond = limit
+	l.Unlock()
 }

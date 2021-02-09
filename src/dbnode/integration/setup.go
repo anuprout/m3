@@ -42,7 +42,6 @@ import (
 	"github.com/m3db/m3/src/dbnode/persist/fs/commitlog"
 	"github.com/m3db/m3/src/dbnode/retention"
 	"github.com/m3db/m3/src/dbnode/runtime"
-	"github.com/m3db/m3/src/dbnode/server"
 	"github.com/m3db/m3/src/dbnode/sharding"
 	"github.com/m3db/m3/src/dbnode/storage"
 	"github.com/m3db/m3/src/dbnode/storage/block"
@@ -62,7 +61,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/uber-go/tally"
-	"github.com/uber/tchannel-go"
+	tchannel "github.com/uber/tchannel-go"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -81,8 +80,12 @@ var (
 
 	testSchemaHistory = prototest.NewSchemaHistory()
 	testSchema        = prototest.NewMessageDescriptor(testSchemaHistory)
+	testSchemaDesc    = namespace.GetTestSchemaDescr(testSchema)
 	testProtoMessages = prototest.NewProtoTestMessages(testSchema)
-	testProtoIter     = prototest.NewProtoMessageIterator(testProtoMessages)
+	testProtoEqual    = func(expect, actual []byte) bool {
+		return prototest.ProtoEqual(testSchema, expect, actual)
+	}
+	testProtoIter = prototest.NewProtoMessageIterator(testProtoMessages)
 )
 
 // nowSetterFn is the function that sets the current time
@@ -102,7 +105,6 @@ type testSetup struct {
 
 	db                cluster.Database
 	storageOpts       storage.Options
-	serverStorageOpts server.StorageOptions
 	fsOpts            fs.Options
 	blockLeaseManager block.LeaseManager
 	hostID            string
@@ -131,10 +133,8 @@ type testSetup struct {
 	namespaces     []namespace.Metadata
 
 	// signals
-	doneCh chan struct {
-	}
-	closedCh chan struct {
-	}
+	doneCh   chan struct{}
+	closedCh chan struct{}
 }
 
 // TestSetup is a test setup.
@@ -149,7 +149,6 @@ type TestSetup interface {
 	Scope() tally.TestScope
 	M3DBClient() client.Client
 	M3DBVerificationAdminClient() client.AdminClient
-	TChannelClient() *TestTChannelClient
 	Namespaces() []namespace.Metadata
 	TopologyInitializer() topology.Initializer
 	SetTopologyInitializer(topology.Initializer)
@@ -157,7 +156,6 @@ type TestSetup interface {
 	FilePathPrefix() string
 	StorageOpts() storage.Options
 	SetStorageOpts(storage.Options)
-	SetServerStorageOpts(server.StorageOptions)
 	Origin() topology.Host
 	ServerIsBootstrapped() bool
 	StopServer() error
@@ -186,15 +184,14 @@ type TestSetup interface {
 	InitializeBootstrappers(opts InitializeBootstrappersOptions) error
 }
 
-// StorageOption is a reference to storage options function.
-type StorageOption func(storage.Options) storage.Options
+type storageOption func(storage.Options) storage.Options
 
 // NewTestSetup returns a new test setup for non-dockerized integration tests.
 func NewTestSetup(
 	t *testing.T,
 	opts TestOptions,
 	fsOpts fs.Options,
-	storageOptFns ...StorageOption,
+	storageOptFns ...storageOption,
 ) (TestSetup, error) {
 	if opts == nil {
 		opts = NewTestOptions(t)
@@ -466,12 +463,7 @@ func NewTestSetup(
 	}
 
 	for _, fn := range storageOptFns {
-		if fn != nil {
-			storageOpts = fn(storageOpts)
-		}
-	}
-	if storageOpts != nil && storageOpts.AdminClient() == nil {
-		storageOpts = storageOpts.SetAdminClient(adminClient)
+		storageOpts = fn(storageOpts)
 	}
 
 	return &testSetup{
@@ -612,10 +604,6 @@ func (ts *testSetup) SetStorageOpts(opts storage.Options) {
 	ts.storageOpts = opts
 }
 
-func (ts *testSetup) SetServerStorageOpts(opts server.StorageOptions) {
-	ts.serverStorageOpts = opts
-}
-
 func (ts *testSetup) TopologyInitializer() topology.Initializer {
 	return ts.topoInit
 }
@@ -743,7 +731,7 @@ func (ts *testSetup) startServerBase(waitForBootstrap bool) error {
 		if err := openAndServe(
 			ts.httpClusterAddr(), ts.tchannelClusterAddr(),
 			ts.httpNodeAddr(), ts.tchannelNodeAddr(), ts.httpDebugAddr(),
-			ts.db, ts.m3dbClient, ts.storageOpts, ts.serverStorageOpts, ts.doneCh,
+			ts.db, ts.m3dbClient, ts.storageOpts, ts.doneCh,
 		); err != nil {
 			select {
 			case resultCh <- err:
@@ -799,10 +787,6 @@ func (ts *testSetup) StopServer() error {
 	// Wait for graceful server close
 	<-ts.closedCh
 	return nil
-}
-
-func (ts *testSetup) TChannelClient() *TestTChannelClient {
-	return ts.tchannelClient
 }
 
 func (ts *testSetup) WriteBatch(namespace ident.ID, seriesList generate.SeriesBlock) error {
@@ -1015,19 +999,22 @@ func newClients(
 	tchannelNodeAddr string,
 ) (client.AdminClient, client.AdminClient, error) {
 	var (
-		clientOpts = defaultClientOptions(topoInit).SetClusterConnectTimeout(
-			opts.ClusterConnectionTimeout()).
-			SetFetchRequestTimeout(opts.FetchRequestTimeout()).
-			SetWriteConsistencyLevel(opts.WriteConsistencyLevel()).
-			SetTopologyInitializer(topoInit).
-			SetUseV2BatchAPIs(true)
+		clientOpts = defaultClientOptions(topoInit).
+				SetClusterConnectTimeout(opts.ClusterConnectionTimeout()).
+				SetFetchRequestTimeout(opts.FetchRequestTimeout()).
+				SetWriteConsistencyLevel(opts.WriteConsistencyLevel()).
+				SetTopologyInitializer(topoInit).
+				SetUseV2BatchAPIs(true)
 
 		origin             = newOrigin(id, tchannelNodeAddr)
 		verificationOrigin = newOrigin(id+"-verification", tchannelNodeAddr)
 
-		adminOpts = clientOpts.(client.AdminOptions).SetOrigin(origin).SetSchemaRegistry(schemaReg)
-
-		verificationAdminOpts = adminOpts.SetOrigin(verificationOrigin).SetSchemaRegistry(schemaReg)
+		adminOpts = clientOpts.(client.AdminOptions).
+				SetOrigin(origin).
+				SetSchemaRegistry(schemaReg)
+		verificationAdminOpts = adminOpts.
+					SetOrigin(verificationOrigin).
+					SetSchemaRegistry(schemaReg)
 	)
 
 	if opts.ProtoEncoding() {
@@ -1104,18 +1091,18 @@ func newNodes(
 		SetConfigServiceClient(fake.NewM3ClusterClient(svcs, nil))
 	topoInit := topology.NewDynamicInitializer(topoOpts)
 
-	nodeOpt := BootstrappableTestSetupOptions{
-		DisablePeersBootstrapper: true,
-		FinalBootstrapper:        bootstrapper.NoOpAllBootstrapperName,
-		TopologyInitializer:      topoInit,
+	nodeOpt := bootstrappableTestSetupOptions{
+		disablePeersBootstrapper: true,
+		finalBootstrapper:        bootstrapper.NoOpAllBootstrapperName,
+		topologyInitializer:      topoInit,
 	}
 
-	nodeOpts := make([]BootstrappableTestSetupOptions, len(instances))
+	nodeOpts := make([]bootstrappableTestSetupOptions, len(instances))
 	for i := range instances {
 		nodeOpts[i] = nodeOpt
 	}
 
-	nodes, closeFn := NewDefaultBootstrappableTestSetups(t, opts, nodeOpts)
+	nodes, closeFn := newDefaultBootstrappableTestSetups(t, opts, nodeOpts)
 
 	nodeClose := func() { // Clean up running servers at end of test
 		log.Debug("servers closing")

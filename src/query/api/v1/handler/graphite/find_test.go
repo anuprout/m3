@@ -227,11 +227,8 @@ func testFind(t *testing.T, httpMethod string, ex bool, ex2 bool, header string)
 	// setup storage and handler
 	store := setupStorage(ctrl, ex, ex2)
 
-	builder, err := handleroptions.NewFetchOptionsBuilder(
-		handleroptions.FetchOptionsBuilderOptions{
-			Timeout: 15 * time.Second,
-		})
-	require.NoError(t, err)
+	builder := handleroptions.NewFetchOptionsBuilder(
+		handleroptions.FetchOptionsBuilderOptions{})
 	opts := options.EmptyHandlerOptions().
 		SetFetchOptionsBuilder(builder).
 		SetStorage(store)

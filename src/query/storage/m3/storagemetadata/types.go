@@ -21,7 +21,6 @@
 package storagemetadata
 
 import (
-	"fmt"
 	"time"
 )
 
@@ -55,12 +54,4 @@ type Attributes struct {
 // Validate validates a storage attributes.
 func (a Attributes) Validate() error {
 	return ValidateMetricsType(a.MetricsType)
-}
-
-// String returns a string detailing the attributes.
-func (a Attributes) String() string {
-	return fmt.Sprintf("type=%s, retention=%s, resolution=%s",
-		a.MetricsType.String(),
-		a.Retention.String(),
-		a.Resolution.String())
 }

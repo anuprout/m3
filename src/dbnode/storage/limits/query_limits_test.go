@@ -34,19 +34,6 @@ import (
 	"github.com/uber-go/tally"
 )
 
-func testQueryLimitOptions(
-	docOpts LookbackLimitOptions,
-	bytesOpts LookbackLimitOptions,
-	seriesOpts LookbackLimitOptions,
-	iOpts instrument.Options,
-) Options {
-	return NewOptions().
-		SetDocsLimitOpts(docOpts).
-		SetBytesReadLimitOpts(bytesOpts).
-		SetDiskSeriesReadLimitOpts(seriesOpts).
-		SetInstrumentOptions(iOpts)
-}
-
 func TestQueryLimits(t *testing.T) {
 	docOpts := LookbackLimitOptions{
 		Limit:    1,
@@ -56,12 +43,7 @@ func TestQueryLimits(t *testing.T) {
 		Limit:    1,
 		Lookback: time.Second,
 	}
-	seriesOpts := LookbackLimitOptions{
-		Limit:    1,
-		Lookback: time.Second,
-	}
-	opts := testQueryLimitOptions(docOpts, bytesOpts, seriesOpts, instrument.NewOptions())
-	queryLimits, err := NewQueryLimits(opts)
+	queryLimits, err := NewQueryLimits(docOpts, bytesOpts, instrument.NewOptions())
 	require.NoError(t, err)
 	require.NotNil(t, queryLimits)
 
@@ -69,14 +51,12 @@ func TestQueryLimits(t *testing.T) {
 	require.NoError(t, queryLimits.AnyExceeded())
 
 	// Limit from docs.
-	require.Error(t, queryLimits.DocsLimit().Inc(2, nil))
+	queryLimits.DocsLimit().Inc(2)
 	err = queryLimits.AnyExceeded()
 	require.Error(t, err)
 	require.True(t, xerrors.IsInvalidParams(err))
-	require.True(t, IsQueryLimitExceededError(err))
 
-	opts = testQueryLimitOptions(docOpts, bytesOpts, seriesOpts, instrument.NewOptions())
-	queryLimits, err = NewQueryLimits(opts)
+	queryLimits, err = NewQueryLimits(docOpts, bytesOpts, instrument.NewOptions())
 	require.NoError(t, err)
 	require.NotNil(t, queryLimits)
 
@@ -85,27 +65,10 @@ func TestQueryLimits(t *testing.T) {
 	require.NoError(t, err)
 
 	// Limit from bytes.
-	require.Error(t, queryLimits.BytesReadLimit().Inc(2, nil))
+	queryLimits.BytesReadLimit().Inc(2)
 	err = queryLimits.AnyExceeded()
 	require.Error(t, err)
 	require.True(t, xerrors.IsInvalidParams(err))
-	require.True(t, IsQueryLimitExceededError(err))
-
-	opts = testQueryLimitOptions(docOpts, bytesOpts, seriesOpts, instrument.NewOptions())
-	queryLimits, err = NewQueryLimits(opts)
-	require.NoError(t, err)
-	require.NotNil(t, queryLimits)
-
-	// No error yet.
-	err = queryLimits.AnyExceeded()
-	require.NoError(t, err)
-
-	// Limit from bytes.
-	require.Error(t, queryLimits.DiskSeriesReadLimit().Inc(2, nil))
-	err = queryLimits.AnyExceeded()
-	require.Error(t, err)
-	require.True(t, xerrors.IsInvalidParams(err))
-	require.True(t, IsQueryLimitExceededError(err))
 }
 
 func TestLookbackLimit(t *testing.T) {
@@ -124,7 +87,7 @@ func TestLookbackLimit(t *testing.T) {
 				Lookback: time.Millisecond * 100,
 			}
 			name := "test"
-			limit := newLookbackLimit(iOpts, opts, name, &sourceLoggerBuilder{})
+			limit := newLookbackLimit(iOpts, opts, name)
 
 			require.Equal(t, int64(0), limit.current())
 			err := limit.exceeded()
@@ -179,13 +142,12 @@ func TestLookbackLimit(t *testing.T) {
 
 func verifyLimit(t *testing.T, limit *lookbackLimit, inc int, expectedLimit int64) int64 {
 	var exceededCount int64
-	err := limit.Inc(inc, nil)
+	err := limit.Inc(inc)
 	if limit.current() <= expectedLimit || expectedLimit == 0 {
 		require.NoError(t, err)
 	} else {
 		require.Error(t, err)
 		require.True(t, xerrors.IsInvalidParams(err))
-		require.True(t, IsQueryLimitExceededError(err))
 		exceededCount++
 	}
 	err = limit.exceeded()
@@ -194,7 +156,6 @@ func verifyLimit(t *testing.T, limit *lookbackLimit, inc int, expectedLimit int6
 	} else {
 		require.Error(t, err)
 		require.True(t, xerrors.IsInvalidParams(err))
-		require.True(t, IsQueryLimitExceededError(err))
 		exceededCount++
 	}
 	return exceededCount
@@ -208,9 +169,9 @@ func TestLookbackReset(t *testing.T) {
 		Lookback: time.Millisecond * 100,
 	}
 	name := "test"
-	limit := newLookbackLimit(iOpts, opts, name, &sourceLoggerBuilder{})
+	limit := newLookbackLimit(iOpts, opts, name)
 
-	err := limit.Inc(3, nil)
+	err := limit.Inc(3)
 	require.NoError(t, err)
 	require.Equal(t, int64(3), limit.current())
 
@@ -302,66 +263,4 @@ func verifyMetrics(t *testing.T,
 	exceeded, exists := snapshot.Counters()[fmt.Sprintf("query-limit.exceeded+limit=%s", name)]
 	assert.True(t, exists)
 	assert.Equal(t, expectedExceeded, exceeded.Value(), "exceeded wrong")
-}
-
-type testLoggerRecord struct {
-	name   string
-	val    int64
-	source []byte
-}
-
-func TestSourceLogger(t *testing.T) {
-	var (
-		scope   = tally.NewTestScope("test", nil)
-		iOpts   = instrument.NewOptions().SetMetricsScope(scope)
-		noLimit = LookbackLimitOptions{
-			Limit:    0,
-			Lookback: time.Millisecond * 100,
-		}
-
-		builder = &testBuilder{records: []testLoggerRecord{}}
-		opts    = testQueryLimitOptions(noLimit, noLimit, noLimit, iOpts).
-			SetSourceLoggerBuilder(builder)
-	)
-
-	require.NoError(t, opts.Validate())
-
-	queryLimits, err := NewQueryLimits(opts)
-	require.NoError(t, err)
-	require.NotNil(t, queryLimits)
-
-	require.NoError(t, queryLimits.DocsLimit().Inc(100, []byte("docs")))
-	require.NoError(t, queryLimits.BytesReadLimit().Inc(200, []byte("bytes")))
-
-	assert.Equal(t, []testLoggerRecord{
-		{name: "docs-matched", val: 100, source: []byte("docs")},
-		{name: "disk-bytes-read", val: 200, source: []byte("bytes")},
-	}, builder.records)
-}
-
-// NB: creates test logger records that share an underlying record set,
-// differentiated by source logger name.
-type testBuilder struct {
-	records []testLoggerRecord
-}
-
-var _ SourceLoggerBuilder = (*testBuilder)(nil)
-
-func (s *testBuilder) NewSourceLogger(n string, _ instrument.Options) SourceLogger {
-	return &testSourceLogger{name: n, builder: s}
-}
-
-type testSourceLogger struct {
-	name    string
-	builder *testBuilder
-}
-
-var _ SourceLogger = (*testSourceLogger)(nil)
-
-func (l *testSourceLogger) LogSourceValue(val int64, source []byte) {
-	l.builder.records = append(l.builder.records, testLoggerRecord{
-		name:   l.name,
-		val:    val,
-		source: source,
-	})
 }

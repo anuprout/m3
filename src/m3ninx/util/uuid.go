@@ -24,12 +24,12 @@ import (
 	"encoding/base64"
 	"errors"
 
-	"github.com/pborman/uuid"
+	"github.com/satori/go.uuid"
 )
 
 var errUUIDForbidden = errors.New("generating UUIDs is forbidden")
 
-var encodedLen = base64.StdEncoding.EncodedLen(len(new(uuid.Array)))
+var encodedLen = base64.StdEncoding.EncodedLen(uuid.Size)
 
 // NewUUIDFn is a function for creating new UUIDs.
 type NewUUIDFn func() ([]byte, error)
@@ -42,7 +42,7 @@ func NewUUID() ([]byte, error) {
 	// guaranteed to be unique since we may have multiple processes running on the
 	// same host. Elasticsearch uses Flake IDs which ensure uniqueness by requiring
 	// an initial coordination step and we may want to consider doing the same.
-	uuid := uuid.NewRandom()
+	uuid := uuid.NewV4().Bytes()
 
 	buf := make([]byte, encodedLen)
 	base64.StdEncoding.Encode(buf, uuid)

@@ -87,15 +87,15 @@ func (f Fields) shallowCopy() Fields {
 	return cp
 }
 
-// Metadata represents a document to be indexed.
-type Metadata struct {
+// Document represents a document to be indexed.
+type Document struct {
 	ID     []byte
 	Fields []Field
 }
 
 // Get returns the value of the specified field name in the document if it exists.
-func (m Metadata) Get(fieldName []byte) ([]byte, bool) {
-	for _, f := range m.Fields { // nolint:gocritic
+func (d Document) Get(fieldName []byte) ([]byte, bool) {
+	for _, f := range d.Fields {
 		if bytes.Equal(fieldName, f.Name) {
 			return f.Value, true
 		}
@@ -105,12 +105,12 @@ func (m Metadata) Get(fieldName []byte) ([]byte, bool) {
 
 // Compare returns an integer comparing two documents. The result will be 0 if the documents
 // are equal, -1 if d is ordered before other, and 1 if d is ordered aftered other.
-func (m Metadata) Compare(other Metadata) int {
-	if c := bytes.Compare(m.ID, other.ID); c != 0 {
+func (d Document) Compare(other Document) int {
+	if c := bytes.Compare(d.ID, other.ID); c != 0 {
 		return c
 	}
 
-	l, r := Fields(m.Fields), Fields(other.Fields)
+	l, r := Fields(d.Fields), Fields(other.Fields)
 
 	// Make a shallow copy of the Fields so we don't mutate the document.
 	if !sort.IsSorted(l) {
@@ -146,21 +146,21 @@ func (m Metadata) Compare(other Metadata) int {
 }
 
 // Equal returns a bool indicating whether d is equal to other.
-func (m Metadata) Equal(other Metadata) bool {
-	return m.Compare(other) == 0
+func (d Document) Equal(other Document) bool {
+	return d.Compare(other) == 0
 }
 
 // Validate returns a bool indicating whether the document is valid.
-func (m Metadata) Validate() error {
-	if len(m.Fields) == 0 && !m.HasID() {
+func (d Document) Validate() error {
+	if len(d.Fields) == 0 && !d.HasID() {
 		return ErrEmptyDocument
 	}
 
-	if !utf8.Valid(m.ID) {
-		return fmt.Errorf("document has invalid ID: id=%v, id_hex=%x", m.ID, m.ID)
+	if !utf8.Valid(d.ID) {
+		return fmt.Errorf("document has invalid ID: id=%v, id_hex=%x", d.ID, d.ID)
 	}
 
-	for _, f := range m.Fields { // nolint:gocritic
+	for _, f := range d.Fields {
 		// TODO: Should we enforce uniqueness of field names?
 		if !utf8.Valid(f.Name) {
 			return fmt.Errorf("document has invalid field name: name=%v, name_hex=%x",
@@ -181,23 +181,23 @@ func (m Metadata) Validate() error {
 }
 
 // HasID returns a bool indicating whether the document has an ID or not.
-func (m Metadata) HasID() bool {
-	return len(m.ID) > 0
+func (d Document) HasID() bool {
+	return len(d.ID) > 0
 }
 
-func (m Metadata) String() string {
+func (d Document) String() string {
 	var buf bytes.Buffer
-	for i, f := range m.Fields { // nolint:gocritic
+	for i, f := range d.Fields {
 		buf.WriteString(fmt.Sprintf("%s: %s", f.Name, f.Value))
-		if i != len(m.Fields)-1 {
+		if i != len(d.Fields)-1 {
 			buf.WriteString(", ")
 		}
 	}
-	return fmt.Sprintf("{id: %s, fields: {%s}}", m.ID, buf.String())
+	return fmt.Sprintf("{id: %s, fields: {%s}}", d.ID, buf.String())
 }
 
 // Documents is a list of documents.
-type Documents []Metadata
+type Documents []Document
 
 func (ds Documents) Len() int {
 	return len(ds)
@@ -211,49 +211,4 @@ func (ds Documents) Less(i, j int) bool {
 
 func (ds Documents) Swap(i, j int) {
 	ds[i], ds[j] = ds[j], ds[i]
-}
-
-// Encoded is a serialized document metadata.
-type Encoded struct {
-	Bytes []byte
-}
-
-// Document contains either metadata or an encoded metadata
-// but never both.
-type Document struct {
-	encoded  Encoded
-	metadata Metadata
-
-	hasEncoded  bool
-	hasMetadata bool
-}
-
-// NewDocumentFromMetadata creates a Document from a Metadata.
-func NewDocumentFromMetadata(m Metadata) Document {
-	return Document{metadata: m, hasMetadata: true}
-}
-
-// NewDocumentFromEncoded creates a Document from an Encoded.
-func NewDocumentFromEncoded(e Encoded) Document {
-	return Document{encoded: e, hasEncoded: true}
-}
-
-// Metadata returns the metadata it contains, if it has one. Otherwise returns an empty metadata
-// and false.
-func (d *Document) Metadata() (Metadata, bool) {
-	if d.hasMetadata {
-		return d.metadata, true
-	}
-
-	return Metadata{}, false
-}
-
-// Encoded returns the encoded metadata it contains, if it has one. Otherwise returns an
-// empty encoded metadata and false.
-func (d *Document) Encoded() (Encoded, bool) {
-	if d.hasEncoded {
-		return d.encoded, true
-	}
-
-	return Encoded{}, false
 }

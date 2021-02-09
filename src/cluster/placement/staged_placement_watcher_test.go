@@ -169,5 +169,3 @@ func (mp *mockPlacement) ActivePlacement() (Placement, DoneFn, error) {
 }
 
 func (mp *mockPlacement) Close() error { return mp.closeFn() }
-
-func (mp *mockPlacement) Version() int { return 0 }

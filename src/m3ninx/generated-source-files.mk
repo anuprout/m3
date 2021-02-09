@@ -98,10 +98,9 @@ genny-map-segment-mem-fieldsmap:
 
 # generation rule for all generated arraypools
 .PHONY: genny-arraypool-all
-genny-arraypool-all:                                  \
-	genny-arraypool-bytes-slice-array-pool            \
-	genny-arraypool-document-array-pool               \
-	genny-arraypool-metadata-array-pool               \
+genny-arraypool-all:                        \
+	genny-arraypool-bytes-slice-array-pool    \
+	genny-arraypool-document-array-pool       \
 
 # arraypool generation rule for ./x/bytes.SliceArrayPool
 .PHONY: genny-arraypool-bytes-slice-array-pool
@@ -118,25 +117,13 @@ genny-arraypool-bytes-slice-array-pool:
 # arraypool generation rule for ./doc.DocumentArrayPool
 .PHONY: genny-arraypool-document-array-pool
 genny-arraypool-document-array-pool:
-	cd $(m3x_package_path) && make genny-arraypool        \
-	pkg=doc                                               \
-	elem_type=Document                                    \
-	target_package=$(m3ninx_package)/doc                  \
-	out_file=doc_arraypool_gen.go                         \
-	rename_type_prefix=Document                           \
-	rename_type_middle=Document                           \
-	rename_constructor=NewDocumentArrayPool               \
-	rename_gen_types=true                                 \
-
-# arraypool generation rule for ./doc.MetadataArrayPool
-.PHONY: genny-arraypool-metadata-array-pool
-genny-arraypool-metadata-array-pool:
 	cd $(m3x_package_path) && make genny-arraypool \
 	pkg=doc                                        \
-	elem_type=Metadata                             \
+	elem_type=Document                             \
 	target_package=$(m3ninx_package)/doc           \
-	out_file=metadata_arraypool_gen.go             \
-	rename_type_prefix=Metadata                    \
-	rename_type_middle=Metadata                    \
-	rename_constructor=NewMetadataArrayPool        \
+	out_file=doc_arraypool_gen.go                  \
+	rename_type_prefix=Document                    \
+	rename_type_middle=Document                    \
+	rename_constructor=NewDocumentArrayPool        \
 	rename_gen_types=true                          \
+

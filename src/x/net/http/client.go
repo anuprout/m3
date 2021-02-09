@@ -23,13 +23,8 @@ package xhttp
 import (
 	"net"
 	"net/http"
-	"net/url"
 	"time"
 )
-
-// ProxyFunc is a type alias for the proxy function used by the standard
-// library's http.Transport struct.
-type ProxyFunc func(*http.Request) (*url.URL, error)
 
 // HTTPClientOptions specify HTTP Client options.
 type HTTPClientOptions struct {
@@ -39,23 +34,14 @@ type HTTPClientOptions struct {
 	IdleConnTimeout    time.Duration `yaml:"idleConnTimeout"`
 	MaxIdleConns       int           `yaml:"maxIdleConns"`
 	DisableCompression bool          `yaml:"disableCompression"`
-	Proxy              ProxyFunc     `yaml:"proxy"`
 }
 
 // NewHTTPClient constructs a new HTTP Client.
 func NewHTTPClient(o HTTPClientOptions) *http.Client {
-	// Before we added the Proxy option, we unconditionally set the field in
-	// the http.Transport we construct below to http.ProxyFromEnvironment. To
-	// keep that behavior unchanged now that we added the field, we need to
-	// set the option if it is nil.
-	if o.Proxy == nil {
-		o.Proxy = http.ProxyFromEnvironment
-	}
-
 	return &http.Client{
 		Timeout: o.RequestTimeout,
 		Transport: &http.Transport{
-			Proxy: o.Proxy,
+			Proxy: http.ProxyFromEnvironment,
 			Dial: (&net.Dialer{
 				Timeout:   o.ConnectTimeout,
 				KeepAlive: o.KeepAlive,
@@ -81,6 +67,5 @@ func DefaultHTTPClientOptions() HTTPClientOptions {
 		// DisableCompression is true by default since we have seen
 		// a large amount of overhead with compression.
 		DisableCompression: true,
-		Proxy:              ProxyFunc(http.ProxyFromEnvironment),
 	}
 }

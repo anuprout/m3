@@ -26,13 +26,14 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"os"
 
 	"github.com/m3db/m3/src/x/instrument"
 
 	"github.com/gogo/protobuf/jsonpb"
 	"github.com/gogo/protobuf/proto"
-	"github.com/ory/dockertest/v3"
-	dc "github.com/ory/dockertest/v3/docker"
+	dockertest "github.com/ory/dockertest"
+	dc "github.com/ory/dockertest/docker"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -50,7 +51,7 @@ type dockerResourceOptions struct {
 	overrideDefaults bool
 	source           string
 	containerName    string
-	image            dockerImage
+	dockerFile       string
 	portList         []int
 	mounts           []string
 	iOpts            instrument.Options
@@ -71,8 +72,8 @@ func (o dockerResourceOptions) withDefaults(
 		o.containerName = defaultOpts.containerName
 	}
 
-	if o.image == (dockerImage{}) {
-		o.image = defaultOpts.image
+	if len(o.dockerFile) == 0 {
+		o.dockerFile = defaultOpts.dockerFile
 	}
 
 	if len(o.portList) == 0 {
@@ -95,12 +96,6 @@ func newOptions(name string) *dockertest.RunOptions {
 		Name:      name,
 		NetworkID: networkName,
 	}
-}
-
-func useImage(opts *dockertest.RunOptions, image dockerImage) *dockertest.RunOptions {
-	opts.Repository = image.name
-	opts.Tag = image.tag
-	return opts
 }
 
 func setupNetwork(pool *dockertest.Pool) error {
@@ -168,6 +163,11 @@ func exposePorts(
 
 	opts.PortBindings = ports
 	return opts
+}
+
+func getDockerfile(file string) string {
+	src, _ := os.Getwd()
+	return fmt.Sprintf("%s/%s", src, file)
 }
 
 func toResponse(

@@ -31,7 +31,6 @@ import (
 	"github.com/m3db/m3/src/query/storage"
 	"github.com/m3db/m3/src/query/storage/m3/consolidators"
 	"github.com/m3db/m3/src/query/storage/m3/storagemetadata"
-	xerrors "github.com/m3db/m3/src/x/errors"
 	"github.com/m3db/m3/src/x/ident"
 
 	"github.com/golang/mock/gomock"
@@ -163,15 +162,14 @@ func generateClusters(t *testing.T, ctrl *gomock.Controller) Clusters {
 }
 
 var testCases = []struct {
-	name                     string
-	queryLength              time.Duration
-	opts                     *storage.FanoutOptions
-	restrict                 *storage.RestrictQueryOptions
-	expectedType             consolidators.QueryFanoutType
-	expectedClusterNames     []string
-	expectedErr              error
-	expectedErrContains      string
-	expectedErrInvalidParams bool
+	name                 string
+	queryLength          time.Duration
+	opts                 *storage.FanoutOptions
+	restrict             *storage.RestrictQueryOptions
+	expectedType         consolidators.QueryFanoutType
+	expectedClusterNames []string
+	expectedErr          error
+	expectedErrContains  string
 }{
 	{
 		name: "all disabled",
@@ -357,8 +355,7 @@ var testCases = []struct {
 				MetricsType: storagemetadata.UnknownMetricsType,
 			},
 		},
-		expectedErrContains:      "unrecognized metrics type:",
-		expectedErrInvalidParams: true,
+		expectedErrContains: "unrecognized metrics type:",
 	},
 	{
 		name:        "restrict with unknown storage policy",
@@ -369,8 +366,7 @@ var testCases = []struct {
 				StoragePolicy: policy.MustParseStoragePolicy("1s:100d"),
 			},
 		},
-		expectedErrContains:      "could not find namespace for storage policy:",
-		expectedErrInvalidParams: true,
+		expectedErrContains: "could not find namespace for storage policy:",
 	},
 }
 
@@ -402,8 +398,6 @@ func TestResolveClusterNamespacesForQueryWithOptions(t *testing.T) {
 				assert.Error(t, err)
 				assert.True(t, strings.Contains(err.Error(), substr))
 				assert.Nil(t, clusters)
-				invalidParams := xerrors.IsInvalidParams(err)
-				assert.Equal(t, tt.expectedErrInvalidParams, invalidParams)
 				return
 			}
 

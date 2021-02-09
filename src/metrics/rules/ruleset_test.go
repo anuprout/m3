@@ -42,7 +42,6 @@ import (
 	"github.com/m3db/m3/src/metrics/rules/view"
 	"github.com/m3db/m3/src/metrics/rules/view/changes"
 	xbytes "github.com/m3db/m3/src/metrics/x/bytes"
-	"github.com/m3db/m3/src/query/models"
 	xerrors "github.com/m3db/m3/src/x/errors"
 	xtime "github.com/m3db/m3/src/x/time"
 
@@ -289,7 +288,6 @@ func TestRuleSetLatest(t *testing.T) {
 				StoragePolicies: policy.StoragePolicies{
 					policy.NewStoragePolicy(30*time.Second, xtime.Second, 6*time.Hour),
 				},
-				Tags: []models.Tag{},
 			},
 			{
 				ID:            "mappingRule3",
@@ -301,7 +299,6 @@ func TestRuleSetLatest(t *testing.T) {
 					policy.NewStoragePolicy(10*time.Second, xtime.Second, 2*time.Hour),
 					policy.NewStoragePolicy(time.Minute, xtime.Minute, time.Hour),
 				},
-				Tags: []models.Tag{},
 			},
 			{
 				ID:            "mappingRule4",
@@ -312,7 +309,6 @@ func TestRuleSetLatest(t *testing.T) {
 				StoragePolicies: policy.StoragePolicies{
 					policy.NewStoragePolicy(10*time.Second, xtime.Second, 24*time.Hour),
 				},
-				Tags: []models.Tag{},
 			},
 			{
 				ID:            "mappingRule5",
@@ -324,7 +320,6 @@ func TestRuleSetLatest(t *testing.T) {
 				StoragePolicies: policy.StoragePolicies{
 					policy.NewStoragePolicy(10*time.Second, xtime.Second, 24*time.Hour),
 				},
-				Tags: []models.Tag{},
 			},
 		},
 		RollupRules: []view.RollupRule{
@@ -571,9 +566,10 @@ func TestRuleSetAddMappingRuleDuplicateRule(t *testing.T) {
 	newID, err := rs.AddMappingRule(view, helper.NewUpdateMetadata(nowNanos, testUser))
 	require.Error(t, err)
 	require.Empty(t, newID)
-	err = xerrors.InnerError(err)
-	require.NotNil(t, err)
-	_, ok := err.(merrors.InvalidInputError) //nolint:errorlint
+	containedErr, ok := err.(xerrors.ContainedError)
+	require.True(t, ok)
+	err = containedErr.InnerError()
+	_, ok = err.(merrors.InvalidInputError)
 	require.True(t, ok)
 }
 
@@ -841,9 +837,10 @@ func TestRuleSetAddRollupRuleDuplicateRule(t *testing.T) {
 	newID, err := rs.AddRollupRule(view, helper.NewUpdateMetadata(nowNanos, testUser))
 	require.Error(t, err)
 	require.Empty(t, newID)
-	err = xerrors.InnerError(err)
-	require.NotNil(t, err)
-	_, ok := err.(merrors.InvalidInputError) //nolint:errorlint
+	containedErr, ok := err.(xerrors.ContainedError)
+	require.True(t, ok)
+	err = containedErr.InnerError()
+	_, ok = err.(merrors.InvalidInputError)
 	require.True(t, ok)
 }
 
@@ -1205,9 +1202,10 @@ func TestApplyMappingRuleChangesAddFailure(t *testing.T) {
 	helper := NewRuleSetUpdateHelper(10)
 	err = rs.ApplyRuleSetChanges(changes, helper.NewUpdateMetadata(nowNanos, testUser))
 	require.Error(t, err)
-	err = xerrors.InnerError(err)
-	require.NotNil(t, err)
-	_, ok := err.(merrors.InvalidInputError) //nolint:errorlint
+	containedErr, ok := err.(xerrors.ContainedError)
+	require.True(t, ok)
+	err = containedErr.InnerError()
+	_, ok = err.(merrors.InvalidInputError)
 	require.True(t, ok)
 }
 
@@ -1237,9 +1235,10 @@ func TestApplyRollupRuleChangesAddFailure(t *testing.T) {
 	helper := NewRuleSetUpdateHelper(10)
 	err = rs.ApplyRuleSetChanges(changes, helper.NewUpdateMetadata(nowNanos, testUser))
 	require.Error(t, err)
-	err = xerrors.InnerError(err)
-	require.NotNil(t, err)
-	_, ok := err.(merrors.InvalidInputError) //nolint:errorlint
+	containedErr, ok := err.(xerrors.ContainedError)
+	require.True(t, ok)
+	err = containedErr.InnerError()
+	_, ok = err.(merrors.InvalidInputError)
 	require.True(t, ok)
 }
 
@@ -1266,9 +1265,10 @@ func TestApplyMappingRuleChangesDeleteFailure(t *testing.T) {
 	helper := NewRuleSetUpdateHelper(10)
 	err = rs.ApplyRuleSetChanges(changes, helper.NewUpdateMetadata(nowNanos, testUser))
 	require.Error(t, err)
-	err = xerrors.InnerError(err)
-	require.NotNil(t, err)
-	_, ok := err.(merrors.InvalidInputError) //nolint:errorlint
+	containedErr, ok := err.(xerrors.ContainedError)
+	require.True(t, ok)
+	err = containedErr.InnerError()
+	_, ok = err.(merrors.InvalidInputError)
 	require.True(t, ok)
 }
 
@@ -1295,9 +1295,10 @@ func TestApplyRollupRuleChangesDeleteFailure(t *testing.T) {
 	helper := NewRuleSetUpdateHelper(10)
 	err = rs.ApplyRuleSetChanges(changes, helper.NewUpdateMetadata(nowNanos, testUser))
 	require.Error(t, err)
-	err = xerrors.InnerError(err)
-	require.NotNil(t, err)
-	_, ok := err.(merrors.InvalidInputError) //nolint:errorlint
+	containedErr, ok := err.(xerrors.ContainedError)
+	require.True(t, ok)
+	err = containedErr.InnerError()
+	_, ok = err.(merrors.InvalidInputError)
 	require.True(t, ok)
 }
 

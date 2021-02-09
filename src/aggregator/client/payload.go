@@ -55,8 +55,8 @@ type timedPayload struct {
 }
 
 type timedWithStagedMetadatas struct {
-	metadatas metadata.StagedMetadatas
 	metric    aggregated.Metric
+	metadatas metadata.StagedMetadatas
 }
 
 type passthroughPayload struct {
@@ -65,10 +65,10 @@ type passthroughPayload struct {
 }
 
 type payloadUnion struct {
-	forwarded                forwardedPayload
+	payloadType              payloadType
 	untimed                  untimedPayload
+	forwarded                forwardedPayload
 	timed                    timedPayload
 	timedWithStagedMetadatas timedWithStagedMetadatas
 	passthrough              passthroughPayload
-	payloadType              payloadType
 }

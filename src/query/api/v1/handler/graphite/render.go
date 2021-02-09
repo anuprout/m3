@@ -55,7 +55,6 @@ var (
 // A renderHandler implements the graphite /render endpoint, including full
 // support for executing functions. It only works against data in M3.
 type renderHandler struct {
-	opts             options.HandlerOptions
 	engine           *native.Engine
 	queryContextOpts models.QueryContextOptions
 	graphiteOpts     graphite.M3WrappedStorageOptions
@@ -71,10 +70,7 @@ func NewRenderHandler(opts options.HandlerOptions) http.Handler {
 	wrappedStore := graphite.NewM3WrappedStorage(opts.Storage(),
 		opts.M3DBOptions(), opts.InstrumentOpts(), opts.GraphiteStorageOptions())
 	return &renderHandler{
-		opts: opts,
-		engine: native.NewEngine(wrappedStore, native.CompileOptions{
-			EscapeAllNotOnlyQuotes: opts.GraphiteStorageOptions().CompileEscapeAllNotOnlyQuotes,
-		}),
+		engine:           native.NewEngine(wrappedStore),
 		queryContextOpts: opts.QueryContextOptions(),
 		graphiteOpts:     opts.GraphiteStorageOptions(),
 	}
@@ -99,7 +95,7 @@ func (h *renderHandler) serveHTTP(
 	r *http.Request,
 ) error {
 	reqCtx := context.WithValue(r.Context(), handler.HeaderKey, r.Header)
-	p, fetchOpts, err := ParseRenderRequest(r, h.opts)
+	p, err := ParseRenderRequest(r)
 	if err != nil {
 		return xhttp.NewError(err, http.StatusBadRequest)
 	}
@@ -146,10 +142,6 @@ func (h *renderHandler) serveHTTP(
 				_ = childCtx.Close()
 				wg.Done()
 			}()
-
-			if source := r.Header.Get(headers.SourceHeader); len(source) > 0 {
-				childCtx.Source = []byte(source)
-			}
 
 			exp, err := h.engine.Compile(target)
 			if err != nil {
@@ -215,7 +207,7 @@ func (h *renderHandler) serveHTTP(
 		SortApplied: true,
 	}
 
-	handleroptions.AddResponseHeaders(w, meta, fetchOpts)
+	handleroptions.AddWarningHeaders(w, meta)
 
 	return WriteRenderResponse(w, response, p.Format, renderResultsJSONOptions{
 		renderSeriesAllNaNs: h.graphiteOpts.RenderSeriesAllNaNs,

@@ -37,6 +37,7 @@ import (
 	"github.com/m3db/m3/src/dbnode/client"
 	xmetrics "github.com/m3db/m3/src/dbnode/x/metrics"
 	"github.com/m3db/m3/src/query/api/v1/handler"
+	"github.com/m3db/m3/src/query/api/v1/handler/prometheus"
 	"github.com/m3db/m3/src/query/api/v1/handler/prometheus/handleroptions"
 	"github.com/m3db/m3/src/query/api/v1/options"
 	"github.com/m3db/m3/src/query/block"
@@ -61,6 +62,10 @@ import (
 var (
 	promReadTestMetrics     = newPromReadMetrics(tally.NewTestScope("", nil))
 	defaultLookbackDuration = time.Minute
+
+	timeoutOpts = &prometheus.TimeoutOpts{
+		FetchTimeout: 15 * time.Second,
+	}
 )
 
 type testVals struct {
@@ -146,26 +151,25 @@ func setupServer(t *testing.T) *httptest.Server {
 		Return(nil, client.FetchResponseMetadata{Exhaustive: false},
 			fmt.Errorf("not initialized")).MaxTimes(1)
 	storage := test.NewSlowStorage(lstore, 10*time.Millisecond)
-	promRead := readHandler(t, storage)
+	promRead := readHandler(storage, timeoutOpts)
 	server := httptest.NewServer(test.NewSlowHandler(promRead, 10*time.Millisecond))
 	return server
 }
 
-func readHandler(t *testing.T, store storage.Storage) http.Handler {
+func readHandler(store storage.Storage,
+	timeoutOpts *prometheus.TimeoutOpts) http.Handler {
 	fetchOpts := handleroptions.FetchOptionsBuilderOptions{
 		Limits: handleroptions.FetchOptionsBuilderLimitsOptions{
 			SeriesLimit: 100,
 		},
-		Timeout: 15 * time.Second,
 	}
-	fetchOptsBuilder, err := handleroptions.NewFetchOptionsBuilder(fetchOpts)
-	require.NoError(t, err)
 	iOpts := instrument.NewOptions()
 	engine := newEngine(store, defaultLookbackDuration, iOpts)
 	opts := options.EmptyHandlerOptions().
 		SetEngine(engine).
 		SetInstrumentOpts(iOpts).
-		SetFetchOptionsBuilder(fetchOptsBuilder)
+		SetFetchOptionsBuilder(handleroptions.NewFetchOptionsBuilder(fetchOpts)).
+		SetTimeoutOpts(timeoutOpts)
 
 	return NewPromReadHandler(opts)
 }
@@ -177,22 +181,28 @@ func TestPromReadParsing(t *testing.T) {
 		Limits: handleroptions.FetchOptionsBuilderLimitsOptions{
 			SeriesLimit: 100,
 		},
-		Timeout: 15 * time.Second,
 	}
-	fetchOptsBuilder, err := handleroptions.NewFetchOptionsBuilder(builderOpts)
-	require.NoError(t, err)
 	engine := newEngine(storage, defaultLookbackDuration,
 		instrument.NewOptions())
 
 	opts := options.EmptyHandlerOptions().
 		SetEngine(engine).
-		SetFetchOptionsBuilder(fetchOptsBuilder)
+		SetFetchOptionsBuilder(handleroptions.NewFetchOptionsBuilder(builderOpts)).
+		SetTimeoutOpts(timeoutOpts)
 
 	req := httptest.NewRequest("POST", PromReadURL, test.GeneratePromReadBody(t))
 	r, fetchOpts, err := ParseRequest(context.TODO(), req, opts)
 	require.Nil(t, err, "unable to parse request")
 	require.Equal(t, len(r.Queries), 1)
 	fmt.Println(fetchOpts)
+}
+
+func TestPromFetchTimeoutParsing(t *testing.T) {
+	url := fmt.Sprintf("%s?timeout=2m", PromReadURL)
+	req := httptest.NewRequest("POST", url, test.GeneratePromReadBody(t))
+	dur, err := prometheus.ParseRequestTimeout(req, time.Second)
+	require.NoError(t, err)
+	assert.Equal(t, 2*time.Minute, dur)
 }
 
 func TestPromReadParsingBad(t *testing.T) {
@@ -283,15 +293,13 @@ func TestReadErrorMetricsCount(t *testing.T) {
 		Limits: handleroptions.FetchOptionsBuilderLimitsOptions{
 			SeriesLimit: 100,
 		},
-		Timeout: 15 * time.Second,
 	}
-	fetchOptsBuilder, err := handleroptions.NewFetchOptionsBuilder(buildOpts)
-	require.NoError(t, err)
 	engine := newEngine(storage, defaultLookbackDuration,
 		instrument.NewOptions())
 	opts := options.EmptyHandlerOptions().
 		SetEngine(engine).
-		SetFetchOptionsBuilder(fetchOptsBuilder)
+		SetTimeoutOpts(&prometheus.TimeoutOpts{FetchTimeout: time.Minute}).
+		SetFetchOptionsBuilder(handleroptions.NewFetchOptionsBuilder(buildOpts))
 	promRead := &promReadHandler{
 		promReadMetrics: readMetrics,
 		opts:            opts,

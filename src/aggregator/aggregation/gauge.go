@@ -27,6 +27,10 @@ import (
 	"github.com/m3db/m3/src/metrics/aggregation"
 )
 
+const (
+	minFloat64 = -math.MaxFloat64
+)
+
 // Gauge aggregates gauge values.
 type Gauge struct {
 	Options
@@ -44,8 +48,8 @@ type Gauge struct {
 func NewGauge(opts Options) Gauge {
 	return Gauge{
 		Options: opts,
-		max:     math.NaN(),
-		min:     math.NaN(),
+		max:     minFloat64,
+		min:     math.MaxFloat64,
 	}
 }
 
@@ -61,17 +65,12 @@ func (g *Gauge) Update(timestamp time.Time, value float64) {
 		g.Options.Metrics.Gauge.IncValuesOutOfOrder()
 	}
 
-	g.count++
-
-	if math.IsNaN(value) {
-		return
-	}
-
 	g.sum += value
-	if math.IsNaN(g.max) || g.max < value {
+	g.count++
+	if g.max < value {
 		g.max = value
 	}
-	if math.IsNaN(g.min) || g.min > value {
+	if g.min > value {
 		g.min = value
 	}
 
@@ -109,14 +108,10 @@ func (g *Gauge) Stdev() float64 {
 }
 
 // Min returns the minimum gauge value.
-func (g *Gauge) Min() float64 {
-	return g.min
-}
+func (g *Gauge) Min() float64 { return g.min }
 
 // Max returns the maximum gauge value.
-func (g *Gauge) Max() float64 {
-	return g.max
-}
+func (g *Gauge) Max() float64 { return g.max }
 
 // ValueOf returns the value for the aggregation type.
 func (g *Gauge) ValueOf(aggType aggregation.Type) float64 {

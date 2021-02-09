@@ -29,14 +29,14 @@ import (
 	"sync/atomic"
 	"time"
 
-	murmur3 "github.com/m3db/stackmurmur3/v2"
-	"github.com/uber-go/tally"
-	"github.com/uber/tchannel-go"
-	"github.com/uber/tchannel-go/thrift"
-	"go.uber.org/zap"
-
 	"github.com/m3db/m3/src/dbnode/generated/thrift/rpc"
 	"github.com/m3db/m3/src/dbnode/topology"
+	xresource "github.com/m3db/m3/src/x/resource"
+	murmur3 "github.com/m3db/stackmurmur3/v2"
+
+	"github.com/uber-go/tally"
+	"github.com/uber/tchannel-go/thrift"
+	"go.uber.org/zap"
 )
 
 const (
@@ -67,21 +67,15 @@ type connPool struct {
 	healthStatus       tally.Gauge
 }
 
-// PooledChannel is a tchannel.Channel for a pooled connection.
-type PooledChannel interface {
-	GetSubChannel(serviceName string, opts ...tchannel.SubChannelOption) *tchannel.SubChannel
-	Close()
-}
-
 type conn struct {
-	channel PooledChannel
+	channel xresource.SimpleCloser
 	client  rpc.TChanNode
 }
 
 // NewConnectionFn is a function that creates a connection.
 type NewConnectionFn func(
 	channelName string, addr string, opts Options,
-) (PooledChannel, rpc.TChanNode, error)
+) (xresource.SimpleCloser, rpc.TChanNode, error)
 
 type healthCheckFn func(client rpc.TChanNode, opts Options) error
 
@@ -140,20 +134,20 @@ func (p *connPool) ConnectionCount() int {
 	return int(poolLen)
 }
 
-func (p *connPool) NextClient() (rpc.TChanNode, PooledChannel, error) {
+func (p *connPool) NextClient() (rpc.TChanNode, error) {
 	p.RLock()
 	if p.status != statusOpen {
 		p.RUnlock()
-		return nil, nil, errConnectionPoolClosed
+		return nil, errConnectionPoolClosed
 	}
 	if p.poolLen < 1 {
 		p.RUnlock()
-		return nil, nil, errConnectionPoolHasNoConnections
+		return nil, errConnectionPoolHasNoConnections
 	}
 	n := atomic.AddInt64(&p.used, 1)
 	conn := p.pool[n%p.poolLen]
 	p.RUnlock()
-	return conn.client, conn.channel, nil
+	return conn.client, nil
 }
 
 func (p *connPool) Close() {

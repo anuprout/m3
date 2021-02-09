@@ -78,7 +78,7 @@ func BenchmarkBlockWrite(b *testing.B) {
 			Timestamp:     now,
 			OnIndexSeries: onIndexSeries,
 			EnqueuedAt:    now,
-		}, doc.Metadata{
+		}, doc.Document{
 			ID:     []byte(fmt.Sprintf("doc.%d", i)),
 			Fields: fields,
 		})

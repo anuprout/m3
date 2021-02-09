@@ -178,7 +178,7 @@ type builder struct {
 	newUUIDFn util.NewUUIDFn
 
 	batchSizeOne  index.Batch
-	docs          []doc.Metadata
+	docs          []doc.Document
 	idSet         *IDsMap
 	shardedJobs   []indexJob
 	shardedFields *shardedFields
@@ -200,7 +200,7 @@ func NewBuilderFromDocuments(opts Options) (segment.CloseableDocumentsBuilder, e
 		opts:      opts,
 		newUUIDFn: opts.NewUUIDFn(),
 		batchSizeOne: index.Batch{
-			Docs: make([]doc.Metadata, 1),
+			Docs: make([]doc.Document, 1),
 		},
 		idSet: NewIDsMap(IDsMapOptions{
 			InitialSize: opts.InitialCapacity(),
@@ -289,7 +289,7 @@ func (b *builder) Reset() {
 	defer b.status.Unlock()
 
 	// Reset the documents slice.
-	var empty doc.Metadata
+	var empty doc.Document
 	for i := range b.docs {
 		b.docs[i] = empty
 	}
@@ -311,7 +311,7 @@ func (b *builder) Reset() {
 	}
 }
 
-func (b *builder) Insert(d doc.Metadata) ([]byte, error) {
+func (b *builder) Insert(d doc.Document) ([]byte, error) {
 	b.status.Lock()
 	defer b.status.Unlock()
 
@@ -485,19 +485,19 @@ func (b *builder) AllDocs() (index.IDDocIterator, error) {
 	return index.NewIDDocIterator(b, rangeIter), nil
 }
 
-func (b *builder) Metadata(id postings.ID) (doc.Metadata, error) {
+func (b *builder) Doc(id postings.ID) (doc.Document, error) {
 	b.status.RLock()
 	defer b.status.RUnlock()
 
 	idx := int(id)
 	if idx < 0 || idx >= len(b.docs) {
-		return doc.Metadata{}, errDocNotFound
+		return doc.Document{}, errDocNotFound
 	}
 
 	return b.docs[idx], nil
 }
 
-func (b *builder) Docs() []doc.Metadata {
+func (b *builder) Docs() []doc.Document {
 	b.status.RLock()
 	defer b.status.RUnlock()
 

@@ -781,8 +781,8 @@ func (m *mutableSegmentsCompact) allocLazyBuilderAndCompactorsWithLock(
 	opts Options,
 ) error {
 	var (
-		err          error
-		metadataPool = opts.MetadataArrayPool()
+		err      error
+		docsPool = opts.DocumentArrayPool()
 	)
 	if m.segmentBuilder == nil {
 		builderOpts := opts.SegmentBuilderOptions().
@@ -795,8 +795,8 @@ func (m *mutableSegmentsCompact) allocLazyBuilderAndCompactorsWithLock(
 	}
 
 	if m.foregroundCompactor == nil {
-		m.foregroundCompactor, err = compaction.NewCompactor(metadataPool,
-			MetadataArrayPoolCapacity,
+		m.foregroundCompactor, err = compaction.NewCompactor(docsPool,
+			DocumentArrayPoolCapacity,
 			opts.SegmentBuilderOptions(),
 			opts.FSTSegmentOptions(),
 			compaction.CompactorOptions{
@@ -814,8 +814,8 @@ func (m *mutableSegmentsCompact) allocLazyBuilderAndCompactorsWithLock(
 	}
 
 	if m.backgroundCompactor == nil {
-		m.backgroundCompactor, err = compaction.NewCompactor(metadataPool,
-			MetadataArrayPoolCapacity,
+		m.backgroundCompactor, err = compaction.NewCompactor(docsPool,
+			DocumentArrayPoolCapacity,
 			opts.SegmentBuilderOptions(),
 			opts.FSTSegmentOptions(),
 			compaction.CompactorOptions{

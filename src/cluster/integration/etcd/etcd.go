@@ -53,7 +53,6 @@ func New(opts Options) (EmbeddedKV, error) {
 	}
 	cfg := embed.NewConfig()
 	cfg.Dir = dir
-	cfg.Logger = "zap"
 
 	setRandomPorts(cfg)
 	e, err := embed.StartEtcd(cfg)
@@ -109,7 +108,7 @@ func (e *embeddedKV) Start() error {
 	}
 
 	// ensure v3 api endpoints are available, https://github.com/coreos/etcd/pull/7075
-	apiVersionEndpoint := fmt.Sprintf("http://%s/version", e.etcd.Clients[0].Addr().String())
+	apiVersionEndpoint := fmt.Sprintf("http://%s/version", 	e.etcd.Clients[0].Addr().String())
 	fn := func() bool { return version3Available(apiVersionEndpoint) }
 	ok := xclock.WaitUntil(fn, timeout)
 	if !ok {

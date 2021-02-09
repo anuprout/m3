@@ -196,12 +196,12 @@ func testRepair(
 		SetUseTChannelClientForWriting(true).
 		SetUseTChannelClientForReading(true)
 
-	setupOpts := []BootstrappableTestSetupOptions{
-		{DisablePeersBootstrapper: true, EnableRepairs: true},
-		{DisablePeersBootstrapper: true, EnableRepairs: true},
-		{DisablePeersBootstrapper: true, EnableRepairs: true},
+	setupOpts := []bootstrappableTestSetupOptions{
+		{disablePeersBootstrapper: true, enableRepairs: true},
+		{disablePeersBootstrapper: true, enableRepairs: true},
+		{disablePeersBootstrapper: true, enableRepairs: true},
 	}
-	setups, closeFn := NewDefaultBootstrappableTestSetups(t, opts, setupOpts)
+	setups, closeFn := newDefaultBootstrappableTestSetups(t, opts, setupOpts)
 	defer closeFn()
 
 	// Ensure that the current time is set such that the previous block is flushable.

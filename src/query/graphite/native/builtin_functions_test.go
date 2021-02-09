@@ -307,7 +307,7 @@ func TestUseSeriesAbove(t *testing.T) {
 		ctrl      = xgomock.NewController(t)
 		store     = storage.NewMockStorage(ctrl)
 		now       = time.Now().Truncate(time.Hour)
-		engine    = NewEngine(store, CompileOptions{})
+		engine    = NewEngine(store)
 		startTime = now.Add(-3 * time.Minute)
 		endTime   = now.Add(-time.Minute)
 		ctx       = common.NewContext(common.ContextOptions{Start: startTime, End: endTime, Engine: engine})
@@ -743,12 +743,14 @@ func testMovingFunction(t *testing.T, target, expectedName string, values, boots
 	ctx := common.NewTestContext()
 	defer ctx.Close()
 
-	engine := NewEngine(&common.MovingFunctionStorage{
-		StepMillis:     10000,
-		Bootstrap:      bootstrap,
-		BootstrapStart: testMovingFunctionBootstrap,
-		Values:         values,
-	}, CompileOptions{})
+	engine := NewEngine(
+		&common.MovingFunctionStorage{
+			StepMillis:     10000,
+			Bootstrap:      bootstrap,
+			BootstrapStart: testMovingFunctionBootstrap,
+			Values:         values,
+		},
+	)
 	phonyContext := common.NewContext(common.ContextOptions{
 		Start:  testMovingFunctionStart,
 		End:    testMovingFunctionEnd,
@@ -781,10 +783,12 @@ func testGeneralFunction(t *testing.T, target, expectedName string, values, outp
 	ctx := common.NewTestContext()
 	defer ctx.Close()
 
-	engine := NewEngine(&common.MovingFunctionStorage{
-		StepMillis: 60000,
-		Values:     values,
-	}, CompileOptions{})
+	engine := NewEngine(
+		&common.MovingFunctionStorage{
+			StepMillis: 60000,
+			Values:     values,
+		},
+	)
 	phonyContext := common.NewContext(common.ContextOptions{
 		Start:  testGeneralFunctionStart,
 		End:    testGeneralFunctionEnd,
@@ -813,7 +817,7 @@ func TestCombineBootstrapWithOriginal(t *testing.T) {
 		ctx          = common.NewContext(common.ContextOptions{
 			Start:  contextStart,
 			End:    contextEnd,
-			Engine: NewEngine(&common.MovingFunctionStorage{}, CompileOptions{}),
+			Engine: NewEngine(&common.MovingFunctionStorage{}),
 		})
 
 		originalStart            = time.Date(2020, time.October, 5, 1, 16, 00, 0, time.UTC)
@@ -897,12 +901,14 @@ func testMovingFunctionError(t *testing.T, target string) {
 	ctx := common.NewTestContext()
 	defer ctx.Close()
 
-	engine := NewEngine(&common.MovingFunctionStorage{
-		StepMillis:     10000,
-		Bootstrap:      []float64{1.0},
-		BootstrapStart: testMovingFunctionBootstrap,
-		Values:         []float64{1.0},
-	}, CompileOptions{})
+	engine := NewEngine(
+		&common.MovingFunctionStorage{
+			StepMillis:     10000,
+			Bootstrap:      []float64{1.0},
+			BootstrapStart: testMovingFunctionBootstrap,
+			Values:         []float64{1.0},
+		},
+	)
 	phonyContext := common.NewContext(common.ContextOptions{
 		Start:  testMovingFunctionStart,
 		End:    testMovingFunctionEnd,
@@ -2507,7 +2513,9 @@ func (*mockStorage) FetchByQuery(
 
 func TestHoltWintersForecast(t *testing.T) {
 	ctx := common.NewTestContext()
-	ctx.Engine = NewEngine(&mockStorage{}, CompileOptions{})
+	ctx.Engine = NewEngine(
+		&mockStorage{},
+	)
 	defer ctx.Close()
 
 	now := ctx.StartTime
@@ -2557,7 +2565,9 @@ func TestHoltWintersForecast(t *testing.T) {
 
 func TestHoltWintersConfidenceBands(t *testing.T) {
 	ctx := common.NewTestContext()
-	ctx.Engine = NewEngine(&mockStorage{}, CompileOptions{})
+	ctx.Engine = NewEngine(
+		&mockStorage{},
+	)
 	defer ctx.Close()
 
 	now := ctx.StartTime
@@ -2617,7 +2627,9 @@ func TestHoltWintersConfidenceBands(t *testing.T) {
 
 func TestHoltWintersAberration(t *testing.T) {
 	ctx := common.NewTestContext()
-	ctx.Engine = NewEngine(&mockStorage{}, CompileOptions{})
+	ctx.Engine = NewEngine(
+		&mockStorage{},
+	)
 	defer ctx.Close()
 
 	now := ctx.StartTime
@@ -3004,7 +3016,7 @@ func TestMovingMedian(t *testing.T) {
 
 	store := storage.NewMockStorage(ctrl)
 	now := time.Now().Truncate(time.Hour)
-	engine := NewEngine(store, CompileOptions{})
+	engine := NewEngine(store)
 	startTime := now.Add(-3 * time.Minute)
 	endTime := now.Add(-time.Minute)
 	ctx := common.NewContext(common.ContextOptions{Start: startTime, End: endTime, Engine: engine})
@@ -3032,7 +3044,7 @@ func TestMovingAverage(t *testing.T) {
 
 	store := storage.NewMockStorage(ctrl)
 	now := time.Now().Truncate(time.Hour)
-	engine := NewEngine(store, CompileOptions{})
+	engine := NewEngine(store)
 	startTime := now.Add(-3 * time.Minute)
 	endTime := now.Add(-1 * time.Minute)
 	ctx := common.NewContext(common.ContextOptions{Start: startTime, End: endTime, Engine: engine})
@@ -3193,47 +3205,6 @@ func TestConsolidateBy(t *testing.T) {
 	require.NotNil(t, err)
 }
 
-func TestPow(t *testing.T) {
-	var (
-		ctx           = common.NewTestContext()
-		millisPerStep = 10000
-		output        = []float64{1.0, 4.0, 9.0, 16.0, 25.0}
-		output2       = []float64{0.0, 4.0, 16.0, 36.0, 64.0}
-	)
-
-	defer func() { _ = ctx.Close() }()
-
-	series := ts.NewSeries(
-		ctx,
-		"foo",
-		ctx.StartTime,
-		common.NewTestSeriesValues(ctx, millisPerStep, []float64{1.0, 2.0, 3.0, 4.0, 5.0}),
-	)
-	results, err := pow(ctx, singlePathSpec{
-		Values: []*ts.Series{series},
-	}, 2)
-	require.Nil(t, err)
-	expected := common.TestSeries{Name: `pow(foo, 2.000000)`, Data: output}
-	require.Nil(t, err)
-	common.CompareOutputsAndExpected(t, millisPerStep, ctx.StartTime,
-		[]common.TestSeries{expected}, results.Values)
-
-	series2 := ts.NewSeries(
-		ctx,
-		"foo",
-		ctx.StartTime,
-		common.NewTestSeriesValues(ctx, millisPerStep, []float64{0.0, 2.0, 4.0, 6.0, 8.0}),
-	)
-	results2, err := pow(ctx, singlePathSpec{
-		Values: []*ts.Series{series, series2},
-	}, 2)
-	require.Nil(t, err)
-	expected2 := common.TestSeries{Name: `pow(foo, 2.000000)`, Data: output2}
-	require.Nil(t, err)
-	common.CompareOutputsAndExpected(t, millisPerStep, ctx.StartTime,
-		[]common.TestSeries{expected, expected2}, results2.Values)
-}
-
 func TestCumulative(t *testing.T) {
 	ctx := common.NewTestContext()
 	defer ctx.Close()
@@ -3340,7 +3311,7 @@ func TestTimeShift(t *testing.T) {
 
 	store := storage.NewMockStorage(ctrl)
 	now := time.Now().Truncate(time.Hour)
-	engine := NewEngine(store, CompileOptions{})
+	engine := NewEngine(store)
 	startTime := now.Add(-3 * time.Minute)
 	endTime := now.Add(-time.Minute)
 	ctx := common.NewContext(common.ContextOptions{
@@ -3395,10 +3366,12 @@ func testDelay(t *testing.T, target, expectedName string, values, output []float
 	ctx := common.NewTestContext()
 	defer ctx.Close()
 
-	engine := NewEngine(&common.MovingFunctionStorage{
-		StepMillis: 10000,
-		Values:     values,
-	}, CompileOptions{})
+	engine := NewEngine(
+		&common.MovingFunctionStorage{
+			StepMillis: 10000,
+			Values:     values,
+		},
+	)
 	phonyContext := common.NewContext(common.ContextOptions{
 		Start:  testDelayStart,
 		End:    testDelayEnd,
@@ -3569,8 +3542,6 @@ func TestFunctionsRegistered(t *testing.T) {
 		"offset",
 		"offsetToZero",
 		"perSecond",
-		"pow",
-		"powSeries",
 		"randomWalk",
 		"randomWalkFunction",
 		"rangeOfSeries",

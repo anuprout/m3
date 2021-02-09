@@ -26,12 +26,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang/mock/gomock"
-	"github.com/stretchr/testify/require"
-	"go.uber.org/goleak"
-
 	"github.com/m3db/m3/src/cluster/placement"
 	"github.com/m3db/m3/src/x/clock"
+
+	"github.com/golang/mock/gomock"
+	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -146,7 +145,6 @@ func TestWriterManagerWriteUntimedNoInstances(t *testing.T) {
 	mgr.closed = false
 	err := mgr.Write(testPlacementInstance, 0, payload)
 	require.Error(t, err)
-	require.NoError(t, mgr.Close())
 }
 
 func TestWriterManagerWriteUntimedSuccess(t *testing.T) {
@@ -164,7 +162,6 @@ func TestWriterManagerWriteUntimedSuccess(t *testing.T) {
 		payloadRes payloadUnion
 	)
 	writer := NewMockinstanceWriter(ctrl)
-	writer.EXPECT().QueueSize().AnyTimes()
 	writer.EXPECT().
 		Write(gomock.Any(), gomock.Any()).
 		DoAndReturn(func(
@@ -217,7 +214,6 @@ func TestWriterManagerFlushPartialError(t *testing.T) {
 	)
 
 	writer1 := NewMockinstanceWriter(ctrl)
-	writer1.EXPECT().QueueSize().AnyTimes()
 	writer1.EXPECT().
 		Flush().
 		DoAndReturn(func() error {
@@ -226,7 +222,6 @@ func TestWriterManagerFlushPartialError(t *testing.T) {
 		})
 	errTestFlush := errors.New("test flush error")
 	writer2 := NewMockinstanceWriter(ctrl)
-	writer2.EXPECT().QueueSize().AnyTimes()
 	writer2.EXPECT().
 		Flush().
 		DoAndReturn(func() error {
@@ -254,9 +249,6 @@ func TestWriterManagerCloseAlreadyClosed(t *testing.T) {
 }
 
 func TestWriterManagerCloseSuccess(t *testing.T) {
-	opts := goleak.IgnoreCurrent() // TODO: other tests don't clean up properly
-	defer goleak.VerifyNone(t, opts)
-
 	mgr := newInstanceWriterManager(testOptions()).(*writerManager)
 
 	// Add instance list and close.
@@ -267,10 +259,8 @@ func TestWriterManagerCloseSuccess(t *testing.T) {
 		for _, w := range mgr.writers {
 			wr := w.instanceWriter.(*writer)
 			wr.Lock()
-			closed := wr.closed
-			wr.Unlock()
-
-			if !closed {
+			defer wr.Unlock()
+			if !wr.closed {
 				return false
 			}
 		}

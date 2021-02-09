@@ -21,7 +21,6 @@
 package node
 
 import (
-	goctx "context"
 	"errors"
 	"fmt"
 	"runtime"
@@ -37,13 +36,10 @@ import (
 	"github.com/m3db/m3/src/dbnode/storage"
 	"github.com/m3db/m3/src/dbnode/storage/block"
 	"github.com/m3db/m3/src/dbnode/storage/index"
-	idxconvert "github.com/m3db/m3/src/dbnode/storage/index/convert"
-	"github.com/m3db/m3/src/dbnode/storage/limits"
 	"github.com/m3db/m3/src/dbnode/tracepoint"
 	"github.com/m3db/m3/src/dbnode/ts/writes"
 	"github.com/m3db/m3/src/dbnode/x/xio"
 	"github.com/m3db/m3/src/dbnode/x/xpool"
-	"github.com/m3db/m3/src/m3ninx/index/segment/fst/encoding/docs"
 	"github.com/m3db/m3/src/x/checked"
 	"github.com/m3db/m3/src/x/clock"
 	"github.com/m3db/m3/src/x/context"
@@ -255,15 +251,12 @@ type Service interface {
 	// Only safe to be called one time once the service has started.
 	SetDatabase(db storage.Database) error
 
-	// Database returns the current database.
-	Database() (storage.Database, error)
-
 	// SetMetadata sets a metadata key to the given value.
 	SetMetadata(key, value string)
 
-	// Metadata returns the metadata for the given key and a bool indicating
+	// GetMetadata returns the metadata for the given key and a bool indicating
 	// if it is present.
-	Metadata(key string) (string, bool)
+	GetMetadata(key string) (string, bool)
 }
 
 // NewService creates a new node TChannel Thrift service
@@ -354,7 +347,7 @@ func (s *service) SetMetadata(key, value string) {
 	s.state.health = newHealth
 }
 
-func (s *service) Metadata(key string) (string, bool) {
+func (s *service) GetMetadata(key string) (string, bool) {
 	s.state.RLock()
 	md, found := s.state.health.Metadata[key]
 	s.state.RUnlock()
@@ -460,8 +453,7 @@ func (s *service) Query(tctx thrift.Context, req *rpc.QueryRequest) (*rpc.QueryR
 	}
 	defer s.readRPCCompleted()
 
-	ctx := addSourceToContext(tctx, req.Source)
-	ctx, sp, sampled := ctx.StartSampledTraceSpan(tracepoint.Query)
+	ctx, sp, sampled := tchannelthrift.Context(tctx).StartSampledTraceSpan(tracepoint.Query)
 	if sampled {
 		sp.LogFields(
 			opentracinglog.String("query", req.Query.String()),
@@ -500,9 +492,6 @@ func (s *service) query(ctx context.Context, db storage.Database, req *rpc.Query
 	if l := req.Limit; l != nil {
 		opts.SeriesLimit = int(*l)
 	}
-	if len(req.Source) > 0 {
-		opts.Source = req.Source
-	}
 	queryResult, err := db.QueryIDs(ctx, nsID, index.Query{Query: q}, opts)
 	if err != nil {
 		return nil, convert.ToRPCError(err)
@@ -516,19 +505,10 @@ func (s *service) query(ctx context.Context, db storage.Database, req *rpc.Query
 	if req.NoData != nil && *req.NoData {
 		fetchData = false
 	}
-	// Re-use reader and id for more memory-efficient processing of
-	// tags from doc.Metadata
-	reader := docs.NewEncodedDocumentReader()
-	id := ident.NewReusableBytesID()
 	for _, entry := range queryResult.Results.Map().Iter() {
-		d := entry.Value()
-		metadata, err := docs.MetadataFromDocument(d, reader)
-		if err != nil {
-			return nil, err
-		}
-		tags := idxconvert.ToSeriesTags(metadata, idxconvert.Opts{NoClone: true})
+		tags := entry.Value()
 		elem := &rpc.QueryResultElement{
-			ID:   string(entry.Key()),
+			ID:   entry.Key().String(),
 			Tags: make([]*rpc.Tag, 0, tags.Remaining()),
 		}
 		result.Results = append(result.Results, elem)
@@ -546,8 +526,8 @@ func (s *service) query(ctx context.Context, db storage.Database, req *rpc.Query
 		if !fetchData {
 			continue
 		}
-		id.Reset(entry.Key())
-		datapoints, err := s.readDatapoints(ctx, db, nsID, id, start, end,
+		tsID := entry.Key()
+		datapoints, err := s.readDatapoints(ctx, db, nsID, tsID, start, end,
 			req.ResultTimeType)
 		if err != nil {
 			return nil, convert.ToRPCError(err)
@@ -634,12 +614,11 @@ func (s *service) Fetch(tctx thrift.Context, req *rpc.FetchRequest) (*rpc.FetchR
 
 	var (
 		callStart = s.nowFn()
-		ctx       = addSourceToContext(tctx, req.Source)
+		ctx       = tchannelthrift.Context(tctx)
 
 		start, rangeStartErr = convert.ToTime(req.RangeStart, req.RangeType)
 		end, rangeEndErr     = convert.ToTime(req.RangeEnd, req.RangeType)
 	)
-
 	if rangeStartErr != nil || rangeEndErr != nil {
 		s.metrics.fetch.ReportError(s.nowFn().Sub(callStart))
 		return nil, tterrors.NewBadRequestError(xerrors.FirstError(rangeStartErr, rangeEndErr))
@@ -718,8 +697,7 @@ func (s *service) FetchTagged(tctx thrift.Context, req *rpc.FetchTaggedRequest) 
 	}
 	defer s.readRPCCompleted()
 
-	ctx := addSourceToContext(tctx, req.Source)
-	ctx, sp, sampled := ctx.StartSampledTraceSpan(tracepoint.FetchTagged)
+	ctx, sp, sampled := tchannelthrift.Context(tctx).StartSampledTraceSpan(tracepoint.FetchTagged)
 	if sampled {
 		sp.LogFields(
 			opentracinglog.String("query", string(req.Query)),
@@ -805,25 +783,12 @@ func (s *service) fetchReadEncoded(ctx context.Context,
 	defer sp.Finish()
 
 	i := 0
-	// Re-use reader and id for more memory-efficient processing of
-	// tags from doc.Metadata
-	reader := docs.NewEncodedDocumentReader()
 	for _, entry := range results.Map().Iter() {
 		idx := i
 		i++
 
-		// NB(r): Use a bytes ID here so that this ID doesn't need to be
-		// copied by the blockRetriever in the streamRequest method when
-		// it checks if the ID is finalizeable or not with IsNoFinalize.
-		id := ident.BytesID(entry.Key())
-
-		d := entry.Value()
-		metadata, err := docs.MetadataFromDocument(d, reader)
-		if err != nil {
-			return err
-		}
-		tags := idxconvert.ToSeriesTags(metadata, idxconvert.Opts{NoClone: true})
-
+		tsID := entry.Key()
+		tags := entry.Value()
 		enc := s.pools.tagEncoder.Get()
 		ctx.RegisterFinalizer(enc)
 		encodedTags, err := s.encodeTags(enc, tags)
@@ -833,7 +798,7 @@ func (s *service) fetchReadEncoded(ctx context.Context,
 
 		elem := &rpc.FetchTaggedIDResult_{
 			NameSpace:   nsIDBytes,
-			ID:          id.Bytes(),
+			ID:          tsID.Bytes(),
 			EncodedTags: encodedTags.Bytes(),
 		}
 		response.Elements = append(response.Elements, elem)
@@ -841,7 +806,7 @@ func (s *service) fetchReadEncoded(ctx context.Context,
 			continue
 		}
 
-		encoded, err := db.ReadEncoded(ctx, nsID, id,
+		encoded, err := db.ReadEncoded(ctx, nsID, tsID,
 			opts.StartInclusive, opts.EndExclusive)
 		if err != nil {
 			return convert.ToRPCError(err)
@@ -868,7 +833,7 @@ func (s *service) fetchReadResults(
 	defer sp.Finish()
 
 	for idx := range response.Elements {
-		segments, rpcErr := s.readEncodedResult(ctx, encodedDataResults[idx])
+		segments, rpcErr := s.readEncodedResult(ctx, nsID, encodedDataResults[idx])
 		if rpcErr != nil {
 			return rpcErr
 		}
@@ -930,7 +895,7 @@ func (s *service) AggregateRaw(tctx thrift.Context, req *rpc.AggregateQueryRawRe
 	defer s.readRPCCompleted()
 
 	callStart := s.nowFn()
-	ctx := addSourceToContext(tctx, req.Source)
+	ctx := tchannelthrift.Context(tctx)
 
 	ns, query, opts, err := convert.FromRPCAggregateQueryRawRequest(req, s.pools)
 	if err != nil {
@@ -1001,7 +966,7 @@ func (s *service) FetchBatchRaw(tctx thrift.Context, req *rpc.FetchBatchRawReque
 	defer s.readRPCCompleted()
 
 	callStart := s.nowFn()
-	ctx := addSourceToContext(tctx, req.Source)
+	ctx := tchannelthrift.Context(tctx)
 
 	start, rangeStartErr := convert.ToTime(req.RangeStart, req.RangeTimeType)
 	end, rangeEndErr := convert.ToTime(req.RangeEnd, req.RangeTimeType)
@@ -1048,7 +1013,7 @@ func (s *service) FetchBatchRaw(tctx thrift.Context, req *rpc.FetchBatchRawReque
 			continue
 		}
 
-		segments, rpcErr := s.readEncodedResult(ctx, encodedResults[i].result)
+		segments, rpcErr := s.readEncodedResult(ctx, nsID, encodedResults[i].result)
 		if rpcErr != nil {
 			rawResult.Err = rpcErr
 			if tterrors.IsBadRequestError(rawResult.Err) {
@@ -1081,14 +1046,13 @@ func (s *service) FetchBatchRawV2(tctx thrift.Context, req *rpc.FetchBatchRawV2R
 
 	var (
 		callStart          = s.nowFn()
-		ctx                = addSourceToContext(tctx, req.Source)
+		ctx                = tchannelthrift.Context(tctx)
 		nsIDs              = make([]ident.ID, 0, len(req.Elements))
 		result             = rpc.NewFetchBatchRawResult_()
 		success            int
 		retryableErrors    int
 		nonRetryableErrors int
 	)
-
 	for _, nsBytes := range req.NameSpaces {
 		nsIDs = append(nsIDs, s.newID(ctx, nsBytes))
 	}
@@ -1125,7 +1089,7 @@ func (s *service) FetchBatchRawV2(tctx thrift.Context, req *rpc.FetchBatchRawV2R
 			continue
 		}
 
-		segments, rpcErr := s.readEncodedResult(ctx, encodedResult)
+		segments, rpcErr := s.readEncodedResult(ctx, nsIdx, encodedResult)
 		if rpcErr != nil {
 			rawResult.Err = rpcErr
 			if tterrors.IsBadRequestError(rawResult.Err) {
@@ -2224,18 +2188,9 @@ func (s *service) SetDatabase(db storage.Database) error {
 	if s.state.db != nil {
 		return errDatabaseHasAlreadyBeenSet
 	}
+
 	s.state.db = db
 	return nil
-}
-
-func (s *service) Database() (storage.Database, error) {
-	s.state.RLock()
-	defer s.state.RUnlock()
-
-	if s.state.db == nil {
-		return nil, errDatabaseIsNotInitializedYet
-	}
-	return s.state.db, nil
 }
 
 func (s *service) startWriteRPCWithDB() (storage.Database, error) {
@@ -2332,8 +2287,18 @@ func (s *service) newPooledID(
 
 func (s *service) readEncodedResult(
 	ctx context.Context,
+	nsID ident.ID,
 	encoded [][]xio.BlockReader,
 ) ([]*rpc.Segments, *rpc.Error) {
+	ctx, sp, sampled := ctx.StartSampledTraceSpan(tracepoint.FetchReadSingleResult)
+	if sampled {
+		sp.LogFields(
+			opentracinglog.String("id", nsID.String()),
+			opentracinglog.Int("segmentCount", len(encoded)),
+		)
+	}
+	defer sp.Finish()
+
 	segments := s.pools.segmentsArray.Get()
 	segments = segmentsArr(segments).grow(len(encoded))
 	segments = segments[:0]
@@ -2342,7 +2307,7 @@ func (s *service) readEncodedResult(
 	}))
 
 	for _, readers := range encoded {
-		segment, err := s.readEncodedResultSegment(readers)
+		segment, err := s.readEncodedResultSegment(ctx, nsID, readers)
 		if err != nil {
 			return nil, err
 		}
@@ -2356,8 +2321,12 @@ func (s *service) readEncodedResult(
 }
 
 func (s *service) readEncodedResultSegment(
+	ctx context.Context,
+	nsID ident.ID,
 	readers []xio.BlockReader,
 ) (*rpc.Segments, *rpc.Error) {
+	ctx, sp, sampled := ctx.StartSampledTraceSpan(tracepoint.FetchReadSegment)
+	defer sp.Finish()
 	converted, err := convert.ToSegments(readers)
 	if err != nil {
 		return nil, convert.ToRPCError(err)
@@ -2366,6 +2335,20 @@ func (s *service) readEncodedResultSegment(
 		return nil, nil
 	}
 
+	if sampled {
+		sp.LogFields(
+			opentracinglog.String("id", nsID.String()),
+			opentracinglog.Int("blockCount", len(readers)),
+			opentracinglog.Int("unmergedCount", len(converted.Segments.Unmerged)),
+		)
+
+		if converted.Segments.Merged != nil {
+			sp.LogFields(
+				opentracinglog.Int64("mergedBlockSize", converted.Segments.Merged.GetBlockSize()),
+				opentracinglog.Int64("mergedStartTime", converted.Segments.Merged.GetStartTime()),
+			)
+		}
+	}
 	return converted.Segments, nil
 }
 
@@ -2635,17 +2618,4 @@ func finalizeEncodedTagsFn(b []byte) {
 // does not.
 func finalizeAnnotationFn(b []byte) {
 	apachethrift.BytesPoolPut(b)
-}
-
-func addSourceToContext(tctx thrift.Context, source []byte) context.Context {
-	ctx := tchannelthrift.Context(tctx)
-	if len(source) > 0 {
-		if base, ok := ctx.GoContext(); ok {
-			ctx.SetGoContext(goctx.WithValue(base, limits.SourceContextKey, source))
-		} else {
-			ctx.SetGoContext(goctx.WithValue(goctx.Background(), limits.SourceContextKey, source))
-		}
-	}
-
-	return ctx
 }

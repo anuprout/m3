@@ -22,7 +22,7 @@ package main
 
 import (
 	"flag"
-	"log"
+	"fmt"
 	_ "net/http/pprof" // pprof: for debug listen server if configured
 	"os"
 	"os/signal"
@@ -35,6 +35,7 @@ import (
 	coordinatorserver "github.com/m3db/m3/src/query/server"
 	xconfig "github.com/m3db/m3/src/x/config"
 	"github.com/m3db/m3/src/x/config/configflag"
+	"github.com/m3db/m3/src/x/etcd"
 	xos "github.com/m3db/m3/src/x/os"
 )
 
@@ -44,13 +45,22 @@ func main() {
 
 	flag.Parse()
 
+	// Set globals for etcd related packages.
+	etcd.SetGlobals()
+
 	var cfg config.Configuration
 	if err := cfgOpts.MainLoad(&cfg, xconfig.Options{}); err != nil {
-		log.Fatalf("error loading config: %v", err)
+		// NB(r): Use fmt.Fprintf(os.Stderr, ...) to avoid etcd.SetGlobals()
+		// sending stdlib "log" to black hole. Don't remove unless with good reason.
+		fmt.Fprintf(os.Stderr, "error loading config: %v\n", err)
+		os.Exit(1)
 	}
 
 	if err := cfg.Validate(); err != nil {
-		log.Fatalf("error validating config: %v", err)
+		// NB(r): Use fmt.Fprintf(os.Stderr, ...) to avoid etcd.SetGlobals()
+		// sending stdlib "log" to black hole. Don't remove unless with good reason.
+		fmt.Fprintf(os.Stderr, "erro validating config: %v\n", err)
+		os.Exit(1)
 	}
 
 	var (

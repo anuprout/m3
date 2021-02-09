@@ -31,9 +31,6 @@ type Store interface {
 	// WriteRuleSet saves the given ruleset to the backing store.
 	WriteRuleSet(rs MutableRuleSet) error
 
-	// WriteNamespaces saves the given namespaces to the backing store.
-	WriteNamespaces(nss *Namespaces) error
-
 	// WriteAll saves both the given ruleset and namespace to the backing store.
 	WriteAll(nss *Namespaces, rs MutableRuleSet) error
 

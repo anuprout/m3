@@ -75,46 +75,6 @@ func newNamespaceOptions() namespace.Options {
 	return namespace.NewOptions().SetStagingState(state)
 }
 
-func TestDynamicClustersUninitialized(t *testing.T) {
-	t.Parallel()
-
-	ctrl := xtest.NewController(t)
-	defer ctrl.Finish()
-
-	mockSession := client.NewMockSession(ctrl)
-
-	// setup dynamic cluster without any namespaces
-	mapCh := make(nsMapCh, 10)
-	nsInitializer := newFakeNsInitializer(t, ctrl, mapCh, false)
-
-	cfg := DynamicClusterNamespaceConfiguration{
-		session:       mockSession,
-		nsInitializer: nsInitializer,
-	}
-
-	opts := newTestOptions(cfg)
-
-	clusters, err := NewDynamicClusters(opts)
-	require.NoError(t, err)
-
-	//nolint:errcheck
-	defer clusters.Close()
-
-	// Aggregated namespaces should not exist
-	_, ok := clusters.AggregatedClusterNamespace(RetentionResolution{
-		Retention:  48 * time.Hour,
-		Resolution: 1 * time.Minute,
-	})
-	require.False(t, ok)
-
-	// Unaggregated namespaces should not be initialized
-	_, ok = clusters.UnaggregatedClusterNamespace()
-	require.False(t, ok)
-
-	// Cluster namespaces should be empty
-	require.Len(t, clusters.ClusterNamespaces(), 0)
-}
-
 func TestDynamicClustersInitialization(t *testing.T) {
 	ctrl := xtest.NewController(t)
 	defer ctrl.Finish()
@@ -464,10 +424,7 @@ func assertClusterNamespace(clusters Clusters, expectedID ident.ID, expectedOpts
 			return false
 		}
 	} else {
-		ns, ok = clusters.UnaggregatedClusterNamespace()
-		if !ok {
-			return false
-		}
+		ns = clusters.UnaggregatedClusterNamespace()
 	}
 	return assert.ObjectsAreEqual(expectedID.String(), ns.NamespaceID().String()) &&
 		assert.ObjectsAreEqual(expectedOpts, ns.Options())

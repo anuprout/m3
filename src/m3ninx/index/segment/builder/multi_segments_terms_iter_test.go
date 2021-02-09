@@ -35,7 +35,7 @@ import (
 
 func TestTermsIterFromSegmentsDeduplicates(t *testing.T) {
 	segments := []segment.Segment{
-		newTestSegmentWithDocs(t, []doc.Metadata{
+		newTestSegmentWithDocs(t, []doc.Document{
 			{
 				ID: []byte("foo"),
 				Fields: []doc.Field{
@@ -44,7 +44,7 @@ func TestTermsIterFromSegmentsDeduplicates(t *testing.T) {
 				},
 			},
 		}),
-		newTestSegmentWithDocs(t, []doc.Metadata{
+		newTestSegmentWithDocs(t, []doc.Document{
 			{
 				ID: []byte("bar"),
 				Fields: []doc.Field{
@@ -93,7 +93,7 @@ func TestTermsIterFromSegmentsDeduplicates(t *testing.T) {
 
 func assertTermsPostings(
 	t *testing.T,
-	docs []doc.Metadata,
+	docs []doc.Document,
 	iter segment.TermsIterator,
 	expected termPostings,
 ) {
@@ -103,7 +103,7 @@ func assertTermsPostings(
 			termsPostingsString(docs, actual)))
 }
 
-func termsPostingsString(docs []doc.Metadata, tp termPostings) string {
+func termsPostingsString(docs []doc.Document, tp termPostings) string {
 	str := strings.Builder{}
 	for k, ids := range tp {
 		str.WriteString(k)

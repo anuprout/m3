@@ -117,15 +117,15 @@ type ConnectionOptions interface {
 type connectionOptions struct {
 	clockOpts      clock.Options
 	instrumentOpts instrument.Options
-	writeRetryOpts retry.Options
-	rwOpts         xio.Options
 	connTimeout    time.Duration
+	connKeepAlive  bool
 	writeTimeout   time.Duration
-	maxDuration    time.Duration
 	initThreshold  int
 	maxThreshold   int
 	multiplier     int
-	connKeepAlive  bool
+	maxDuration    time.Duration
+	writeRetryOpts retry.Options
+	rwOpts         xio.Options
 }
 
 // NewConnectionOptions create a new set of connection options.

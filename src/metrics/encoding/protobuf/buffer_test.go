@@ -37,11 +37,13 @@ func TestBufferWithPool(t *testing.T) {
 	data := p.Get(16)[:16]
 	data[0] = 0xff
 
-	buf := NewBuffer(data, p.Put)
-	require.NotNil(t, buf.buf)
+	buf := NewBuffer(data, p)
+	require.Equal(t, data, buf.Bytes())
+	require.False(t, buf.closed)
 
 	buf.Close()
-	require.Nil(t, buf.finalizer)
+	require.True(t, buf.closed)
+	require.Nil(t, buf.pool)
 	require.Nil(t, buf.buf)
 
 	// Verify that closing the buffer returns the buffer to pool.
@@ -58,10 +60,11 @@ func TestBufferNilPool(t *testing.T) {
 	data := make([]byte, 16)
 	buf := NewBuffer(data, nil)
 	require.Equal(t, data, buf.Bytes())
-	require.NotNil(t, buf.buf)
+	require.False(t, buf.closed)
 
 	buf.Close()
-	require.Nil(t, buf.finalizer)
+	require.True(t, buf.closed)
+	require.Nil(t, buf.pool)
 	require.Nil(t, buf.buf)
 }
 

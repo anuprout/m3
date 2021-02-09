@@ -21,21 +21,10 @@
 package xhttp
 
 import (
-	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
-	"sync"
 
 	xerrors "github.com/m3db/m3/src/x/errors"
-)
-
-// ErrorRewriteFn is a function for rewriting response error.
-type ErrorRewriteFn func(error) error
-
-var (
-	errorRewriteFn     ErrorRewriteFn = func(err error) error { return err }
-	errorRewriteFnLock sync.RWMutex
 )
 
 // Error is an HTTP JSON error that also sets a return status code.
@@ -77,8 +66,7 @@ func (e errorWithCode) Code() int {
 
 // ErrorResponse is a generic response for an HTTP error.
 type ErrorResponse struct {
-	Status string `json:"status"`
-	Error  string `json:"error"`
+	Error string `json:"error"`
 }
 
 type options struct {
@@ -102,47 +90,23 @@ func WriteError(w http.ResponseWriter, err error, opts ...WriteErrorOption) {
 		fn(&o)
 	}
 
-	errorRewriteFnLock.RLock()
-	err = errorRewriteFn(err)
-	errorRewriteFnLock.RUnlock()
-
-	statusCode := getStatusCode(err)
-	if o.response == nil {
-		w.Header().Set(HeaderContentType, ContentTypeJSON)
-		w.WriteHeader(statusCode)
-		json.NewEncoder(w).Encode(ErrorResponse{Status: "error", Error: err.Error()}) //nolint:errcheck
-	} else {
-		w.WriteHeader(statusCode)
-		w.Write(o.response)
-	}
-}
-
-// SetErrorRewriteFn sets error rewrite function.
-func SetErrorRewriteFn(f ErrorRewriteFn) ErrorRewriteFn {
-	errorRewriteFnLock.Lock()
-	defer errorRewriteFnLock.Unlock()
-
-	res := errorRewriteFn
-	errorRewriteFn = f
-	return res
-}
-
-func getStatusCode(err error) int {
 	switch v := err.(type) {
 	case Error:
-		return v.Code()
+		w.WriteHeader(v.Code())
 	case error:
 		if xerrors.IsInvalidParams(v) {
-			return http.StatusBadRequest
-		} else if errors.Is(err, context.DeadlineExceeded) {
-			return http.StatusGatewayTimeout
+			w.WriteHeader(http.StatusBadRequest)
+		} else {
+			w.WriteHeader(http.StatusInternalServerError)
 		}
+	default:
+		w.WriteHeader(http.StatusInternalServerError)
 	}
-	return http.StatusInternalServerError
-}
 
-// IsClientError returns true if this error would result in 4xx status code.
-func IsClientError(err error) bool {
-	code := getStatusCode(err)
-	return code >= 400 && code < 500
+	if o.response != nil {
+		w.Write(o.response)
+		return
+	}
+
+	json.NewEncoder(w).Encode(ErrorResponse{Error: err.Error()})
 }

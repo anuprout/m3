@@ -29,13 +29,14 @@ import (
 	"github.com/m3db/m3/src/query/generated/proto/admin"
 	xerrors "github.com/m3db/m3/src/x/errors"
 
-	"github.com/ory/dockertest/v3"
+	dockertest "github.com/ory/dockertest"
 	"go.uber.org/zap"
 )
 
 const (
 	defaultDBNodeSource        = "dbnode"
 	defaultDBNodeContainerName = "dbnode01"
+	defaultDBNodeDockerfile    = "resources/config/m3dbnode.Dockerfile"
 )
 
 var (
@@ -44,6 +45,7 @@ var (
 	defaultDBNodeOptions = dockerResourceOptions{
 		source:        defaultDBNodeSource,
 		containerName: defaultDBNodeContainerName,
+		dockerFile:    getDockerfile(defaultDBNodeDockerfile),
 		portList:      defaultDBNodePortList,
 	}
 )

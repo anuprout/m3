@@ -103,7 +103,7 @@ func (h *PromSeriesMatchHandler) ServeHTTP(w http.ResponseWriter, r *http.Reques
 		meta = meta.CombineMetadata(result.Metadata)
 	}
 
-	handleroptions.AddResponseHeaders(w, meta, opts)
+	handleroptions.AddWarningHeaders(w, meta)
 	// TODO: Support multiple result types
 	if err := prometheus.RenderSeriesMatchResultsJSON(w, results, false); err != nil {
 		logger.Error("unable to write matched series", zap.Error(err))

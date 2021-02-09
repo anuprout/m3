@@ -31,7 +31,7 @@ import (
 
 // ReadDocs reads up to n documents from a JSON formatted file at the provided path.
 // It is useful for getting a set of documents to run tests with.
-func ReadDocs(path string, n int) ([]doc.Metadata, error) {
+func ReadDocs(path string, n int) ([]doc.Document, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -39,7 +39,7 @@ func ReadDocs(path string, n int) ([]doc.Metadata, error) {
 	defer f.Close()
 
 	var (
-		docs    []doc.Metadata
+		docs    []doc.Document
 		scanner = bufio.NewScanner(f)
 	)
 	for scanner.Scan() && len(docs) < n {
@@ -64,7 +64,7 @@ func ReadDocs(path string, n int) ([]doc.Metadata, error) {
 				Value: []byte(v),
 			})
 		}
-		docs = append(docs, doc.Metadata{
+		docs = append(docs, doc.Document{
 			ID:     id,
 			Fields: fields,
 		})
@@ -78,7 +78,7 @@ func ReadDocs(path string, n int) ([]doc.Metadata, error) {
 }
 
 // MustReadDocs calls ReadDocs and panics if there is an error.
-func MustReadDocs(path string, n int) []doc.Metadata {
+func MustReadDocs(path string, n int) []doc.Document {
 	docs, err := ReadDocs(path, n)
 	if err != nil {
 		panic(err)

@@ -67,11 +67,11 @@ func testPeersBootstrapSimple(t *testing.T, setTestOpts setTestOptions, updateIn
 		namesp = opts.Namespaces()[0]
 	}
 
-	setupOpts := []BootstrappableTestSetupOptions{
-		{DisablePeersBootstrapper: true},
-		{DisablePeersBootstrapper: false},
+	setupOpts := []bootstrappableTestSetupOptions{
+		{disablePeersBootstrapper: true},
+		{disablePeersBootstrapper: false},
 	}
-	setups, closeFn := NewDefaultBootstrappableTestSetups(t, opts, setupOpts)
+	setups, closeFn := newDefaultBootstrappableTestSetups(t, opts, setupOpts)
 	defer closeFn()
 
 	// Write test data for first node

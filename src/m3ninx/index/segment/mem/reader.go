@@ -124,45 +124,28 @@ func (r *reader) MatchAll() (postings.MutableList, error) {
 	return pl, nil
 }
 
-func (r *reader) Metadata(id postings.ID) (doc.Metadata, error) {
-	r.RLock()
-	defer r.RUnlock()
-
-	return r.getMetadataWithRLock(id)
-}
-
-func (r *reader) MetadataIterator(pl postings.List) (doc.MetadataIterator, error) {
-	r.RLock()
-	defer r.RUnlock()
-	if r.closed {
-		return nil, errSegmentReaderClosed
-	}
-	boundedIter := newBoundedPostingsIterator(pl.Iterator(), r.limits)
-	return r.getMetadataIterWithLock(boundedIter), nil
-}
-
 func (r *reader) Doc(id postings.ID) (doc.Document, error) {
 	r.RLock()
 	defer r.RUnlock()
-
-	m, err := r.getMetadataWithRLock(id)
-	if err != nil {
-		return doc.Document{}, err
+	if r.closed {
+		return doc.Document{}, errSegmentReaderClosed
 	}
 
-	return doc.NewDocumentFromMetadata(m), nil
+	if id < r.limits.startInclusive || id >= r.limits.endExclusive {
+		return doc.Document{}, index.ErrDocNotFound
+	}
+
+	return r.segment.getDoc(id)
 }
 
 func (r *reader) Docs(pl postings.List) (doc.Iterator, error) {
 	r.RLock()
 	defer r.RUnlock()
-
 	if r.closed {
 		return nil, errSegmentReaderClosed
 	}
-
 	boundedIter := newBoundedPostingsIterator(pl.Iterator(), r.limits)
-	return index.NewIterator(r, boundedIter), nil
+	return r.getDocIterWithLock(boundedIter), nil
 }
 
 func (r *reader) AllDocs() (index.IDDocIterator, error) {
@@ -173,23 +156,11 @@ func (r *reader) AllDocs() (index.IDDocIterator, error) {
 	}
 
 	pi := postings.NewRangeIterator(r.limits.startInclusive, r.limits.endExclusive)
-	return r.getMetadataIterWithLock(pi), nil
+	return r.getDocIterWithLock(pi), nil
 }
 
-func (r *reader) getMetadataIterWithLock(iter postings.Iterator) index.IDDocIterator {
+func (r *reader) getDocIterWithLock(iter postings.Iterator) index.IDDocIterator {
 	return index.NewIDDocIterator(r, iter)
-}
-
-func (r *reader) getMetadataWithRLock(id postings.ID) (doc.Metadata, error) {
-	if r.closed {
-		return doc.Metadata{}, errSegmentReaderClosed
-	}
-
-	if id < r.limits.startInclusive || id >= r.limits.endExclusive {
-		return doc.Metadata{}, index.ErrDocNotFound
-	}
-
-	return r.segment.getDoc(id)
 }
 
 func (r *reader) Close() error {

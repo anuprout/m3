@@ -79,8 +79,8 @@ var (
 
 func newTestOptions(t require.TestingT, filePathPrefix string) Options {
 	idxOpts := index.NewOptions()
-	compactor, err := compaction.NewCompactor(idxOpts.MetadataArrayPool(),
-		index.MetadataArrayPoolCapacity,
+	compactor, err := compaction.NewCompactor(idxOpts.DocumentArrayPool(),
+		index.DocumentArrayPoolCapacity,
 		idxOpts.SegmentBuilderOptions(),
 		idxOpts.FSTSegmentOptions(),
 		compaction.CompactorOptions{

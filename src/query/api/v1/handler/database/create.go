@@ -40,7 +40,6 @@ import (
 	"github.com/m3db/m3/src/query/api/v1/handler/namespace"
 	"github.com/m3db/m3/src/query/api/v1/handler/placement"
 	"github.com/m3db/m3/src/query/api/v1/handler/prometheus/handleroptions"
-	"github.com/m3db/m3/src/query/api/v1/options"
 	"github.com/m3db/m3/src/query/generated/proto/admin"
 	"github.com/m3db/m3/src/query/util/logging"
 	xerrors "github.com/m3db/m3/src/x/errors"
@@ -149,7 +148,6 @@ func NewCreateHandler(
 	embeddedDbCfg *dbconfig.DBConfiguration,
 	defaults []handleroptions.ServiceOptionsDefault,
 	instrumentOpts instrument.Options,
-	namespaceValidator options.NamespaceValidator,
 ) (http.Handler, error) {
 	placementHandlerOptions, err := placement.NewHandlerOptions(client,
 		cfg, nil, instrumentOpts)
@@ -159,7 +157,7 @@ func NewCreateHandler(
 	return &createHandler{
 		placementInitHandler:   placement.NewInitHandler(placementHandlerOptions),
 		placementGetHandler:    placement.NewGetHandler(placementHandlerOptions),
-		namespaceAddHandler:    namespace.NewAddHandler(client, instrumentOpts, namespaceValidator),
+		namespaceAddHandler:    namespace.NewAddHandler(client, instrumentOpts),
 		namespaceGetHandler:    namespace.NewGetHandler(client, instrumentOpts),
 		namespaceDeleteHandler: namespace.NewDeleteHandler(client, instrumentOpts),
 		embeddedDbCfg:          embeddedDbCfg,
@@ -318,7 +316,7 @@ func (h *createHandler) parseAndValidateRequest(
 ) (*admin.DatabaseCreateRequest, []*admin.NamespaceAddRequest, *admin.PlacementInitRequest, error) {
 	requirePlacement := existingPlacement == nil
 
-	defer r.Body.Close() //nolint:errcheck
+	defer r.Body.Close()
 	rBody, err := xhttp.DurationToNanosBytes(r.Body)
 	if err != nil {
 		wrapped := fmt.Errorf("error converting duration to nano bytes: %s", err.Error())
@@ -584,7 +582,7 @@ func defaultedPlacementInitRequest(
 		numShards = shardMultiplier
 		replicationFactor = 1
 		instances = []*placementpb.Instance{
-			{
+			&placementpb.Instance{
 				Id:             DefaultLocalHostID,
 				IsolationGroup: DefaultLocalIsolationGroup,
 				Zone:           DefaultLocalZone,

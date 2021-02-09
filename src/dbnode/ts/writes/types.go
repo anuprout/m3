@@ -49,7 +49,7 @@ type Write struct {
 // PendingIndexInsert is a pending index insert.
 type PendingIndexInsert struct {
 	Entry    index.WriteBatchEntry
-	Document doc.Metadata
+	Document doc.Document
 }
 
 // BatchWrite represents a write that was added to the

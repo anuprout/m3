@@ -40,28 +40,28 @@ var (
 	testMemSegmentOptions     = mem.NewOptions()
 	testBuilderSegmentOptions = builder.NewOptions()
 
-	testDocuments = []doc.Metadata{
-		{
+	testDocuments = []doc.Document{
+		doc.Document{
 			ID: []byte("one"),
 			Fields: []doc.Field{
-				{
+				doc.Field{
 					Name:  []byte("fruit"),
 					Value: []byte("banana"),
 				},
-				{
+				doc.Field{
 					Name:  []byte("color"),
 					Value: []byte("yellow"),
 				},
 			},
 		},
-		{
+		doc.Document{
 			ID: []byte("two"),
 			Fields: []doc.Field{
-				{
+				doc.Field{
 					Name:  []byte("fruit"),
 					Value: []byte("apple"),
 				},
-				{
+				doc.Field{
 					Name:  []byte("color"),
 					Value: []byte("red"),
 				},
@@ -69,15 +69,15 @@ var (
 		},
 	}
 
-	testMetadataMaxBatch = 8
-	testMetadataPool     = doc.NewMetadataArrayPool(doc.MetadataArrayPoolOpts{
+	testDocsMaxBatch = 8
+	testDocsPool     = doc.NewDocumentArrayPool(doc.DocumentArrayPoolOpts{
 		Options:  pool.NewObjectPoolOptions().SetSize(1),
-		Capacity: testMetadataMaxBatch,
+		Capacity: testDocsMaxBatch,
 	})
 )
 
 func init() {
-	testMetadataPool.Init()
+	testDocsPool.Init()
 }
 
 func TestCompactorSingleMutableSegment(t *testing.T) {
@@ -90,7 +90,7 @@ func TestCompactorSingleMutableSegment(t *testing.T) {
 	_, err = seg.Insert(testDocuments[1])
 	require.NoError(t, err)
 
-	compactor, err := NewCompactor(testMetadataPool, testMetadataMaxBatch,
+	compactor, err := NewCompactor(testDocsPool, testDocsMaxBatch,
 		testBuilderSegmentOptions, testFSTSegmentOptions, CompactorOptions{})
 	require.NoError(t, err)
 
@@ -114,7 +114,7 @@ func TestCompactorSingleMutableSegmentWithMmapDocsData(t *testing.T) {
 	_, err = seg.Insert(testDocuments[1])
 	require.NoError(t, err)
 
-	compactor, err := NewCompactor(testMetadataPool, testMetadataMaxBatch,
+	compactor, err := NewCompactor(testDocsPool, testDocsMaxBatch,
 		testBuilderSegmentOptions, testFSTSegmentOptions, CompactorOptions{
 			MmapDocsData: true,
 		})
@@ -143,7 +143,7 @@ func TestCompactorManySegments(t *testing.T) {
 	_, err = seg2.Insert(testDocuments[1])
 	require.NoError(t, err)
 
-	compactor, err := NewCompactor(testMetadataPool, testMetadataMaxBatch,
+	compactor, err := NewCompactor(testDocsPool, testDocsMaxBatch,
 		testBuilderSegmentOptions, testFSTSegmentOptions, CompactorOptions{})
 	require.NoError(t, err)
 
@@ -174,7 +174,7 @@ func TestCompactorCompactDuplicateIDsNoError(t *testing.T) {
 	_, err = seg2.Insert(testDocuments[1])
 	require.NoError(t, err)
 
-	compactor, err := NewCompactor(testMetadataPool, testMetadataMaxBatch,
+	compactor, err := NewCompactor(testDocsPool, testDocsMaxBatch,
 		testBuilderSegmentOptions, testFSTSegmentOptions, CompactorOptions{})
 	require.NoError(t, err)
 
@@ -189,7 +189,7 @@ func TestCompactorCompactDuplicateIDsNoError(t *testing.T) {
 	require.NoError(t, compactor.Close())
 }
 
-func assertContents(t *testing.T, seg segment.Segment, docs []doc.Metadata) {
+func assertContents(t *testing.T, seg segment.Segment, docs []doc.Document) {
 	// Ensure has contents
 	require.Equal(t, int64(len(docs)), seg.Size())
 	reader, err := seg.Reader()

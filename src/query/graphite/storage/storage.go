@@ -37,8 +37,6 @@ type FetchOptions struct {
 	EndTime time.Time
 	// DataOptions are the options for the fetch.
 	DataOptions
-	// Source is the query source.
-	Source []byte
 }
 
 // DataOptions provide data context.

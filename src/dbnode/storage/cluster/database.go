@@ -357,9 +357,9 @@ func (d *clusterDB) analyzeAndReportShardStates() {
 
 	defer reportStats()
 
-	// Manage the reusable vars
-	d.resetReusable()
-	defer d.resetReusable()
+	// Manage the reuseable vars
+	d.resetReuseable()
+	defer d.resetReuseable()
 
 	for _, s := range entry.ShardSet().All() {
 		if s.State() == shard.Initializing {
@@ -441,7 +441,7 @@ func (d *clusterDB) analyzeAndReportShardStates() {
 		zap.Uint32s("shards", markAvailable))
 }
 
-func (d *clusterDB) resetReusable() {
+func (d *clusterDB) resetReuseable() {
 	d.resetInitializing()
 	d.resetBootstrapCount()
 }
