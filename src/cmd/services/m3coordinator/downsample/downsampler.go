@@ -21,6 +21,7 @@
 package downsample
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -192,7 +193,7 @@ func (d *downsampler) OnUpdate(namespaces m3.ClusterNamespaces) {
 			isAnyAggNamespaceDisabled = true
 			break
 		}
-	}	
+	}
 
 	autoMappingRules, err := NewAutoMappingRules(namespaces)
 	if err != nil {
