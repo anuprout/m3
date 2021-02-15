@@ -69,11 +69,10 @@ type ingestWriteHandler struct {
 }
 
 type influxDBWriteMetrics struct {
-	writeSuccess             tally.Counter
-	writeErrorsServer        tally.Counter
-	writeErrorsClient        tally.Counter
-	writeBatchLatency        tally.Histogram
-	writeBatchLatencyBuckets tally.DurationBuckets
+	writeSuccess      tally.Counter
+	writeErrorsServer tally.Counter
+	writeErrorsClient tally.Counter
+	writeBatchLatency tally.Histogram
 }
 
 func (m *influxDBWriteMetrics) incError(err error) {
@@ -85,15 +84,14 @@ func (m *influxDBWriteMetrics) incError(err error) {
 }
 
 func newInfluxDBriteMetrics(scope tally.Scope) (influxDBWriteMetrics, error) {
-	buckets, err := ingest.NewLatencyBuckets()
+	writeLatencyBuckets, err := tally.ExponentialValueBuckets(1, 2, 15)
 	if err != nil {
 		return influxDBWriteMetrics{}, err
 	}
 	return influxDBWriteMetrics{
-		writeSuccess:             scope.SubScope("write").Counter("success"),
-		writeErrorsServer:        scope.SubScope("write").Tagged(map[string]string{"code": "5XX"}).Counter("errors"),
-		writeBatchLatency:        scope.SubScope("write").Histogram("batch-latency", buckets.WriteLatencyBuckets),
-		writeBatchLatencyBuckets: buckets.WriteLatencyBuckets,
+		writeSuccess:      scope.SubScope("write").Counter("success"),
+		writeErrorsServer: scope.SubScope("write").Tagged(map[string]string{"code": "5XX"}).Counter("errors"),
+		writeBatchLatency: scope.SubScope("write").Histogram("batch-latency", writeLatencyBuckets),
 	}, nil
 }
 
