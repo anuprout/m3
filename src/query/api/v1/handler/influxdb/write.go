@@ -69,6 +69,7 @@ type ingestWriteHandler struct {
 }
 
 type influxDBWriteMetrics struct {
+	writeBatchSize    tally.Counter
 	writeSuccess      tally.Counter
 	writeErrorsServer tally.Counter
 	writeErrorsClient tally.Counter
@@ -89,6 +90,7 @@ func newInfluxDBriteMetrics(scope tally.Scope) (influxDBWriteMetrics, error) {
 		return influxDBWriteMetrics{}, err
 	}
 	return influxDBWriteMetrics{
+		writeBatchSize:    scope.SubScope("write").Counter("batch-size"),
 		writeSuccess:      scope.SubScope("write").Counter("success"),
 		writeErrorsServer: scope.SubScope("write").Tagged(map[string]string{"code": "5XX"}).Counter("errors"),
 		writeBatchLatency: scope.SubScope("write").Histogram("batch-latency", writeLatencyBuckets),
@@ -379,6 +381,7 @@ func (iwh *ingestWriteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 	iter := &ingestIterator{points: points, tagOpts: iwh.tagOpts, promRewriter: iwh.promRewriter}
 	batchErr := iwh.handlerOpts.DownsamplerAndWriter().WriteBatch(r.Context(), iter, opts)
 	if batchErr == nil {
+		iwh.metrics.writeBatchSize.Inc(int64(len(points)))
 		iwh.metrics.writeSuccess.Inc(1)
 		w.WriteHeader(http.StatusNoContent)
 		return
