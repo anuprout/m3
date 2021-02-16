@@ -29,6 +29,7 @@ import (
 	"strings"
 	"time"
 
+	imodels "github.com/influxdata/influxdb/models"
 	"github.com/m3db/m3/src/cmd/services/m3coordinator/ingest"
 	"github.com/m3db/m3/src/dbnode/client"
 	"github.com/m3db/m3/src/metrics/policy"
@@ -38,12 +39,11 @@ import (
 	"github.com/m3db/m3/src/query/storage/m3/storagemetadata"
 	"github.com/m3db/m3/src/query/ts"
 	"github.com/m3db/m3/src/query/util/logging"
-
-	imodels "github.com/influxdata/influxdb/models"
 	xerrors "github.com/m3db/m3/src/x/errors"
 	"github.com/m3db/m3/src/x/headers"
 	xhttp "github.com/m3db/m3/src/x/net/http"
 	xtime "github.com/m3db/m3/src/x/time"
+	"github.com/uber-go/tally"
 	"go.uber.org/zap"
 )
 
@@ -65,6 +65,36 @@ type ingestWriteHandler struct {
 	handlerOpts  options.HandlerOptions
 	tagOpts      models.TagOptions
 	promRewriter *promRewriter
+	metrics      influxDBWriteMetrics
+}
+
+type influxDBWriteMetrics struct {
+	writeBatchSize    tally.Counter
+	writeSuccess      tally.Counter
+	writeErrorsServer tally.Counter
+	writeErrorsClient tally.Counter
+	writeBatchLatency tally.Histogram
+}
+
+func (m *influxDBWriteMetrics) incError(err error) {
+	if xhttp.IsClientError(err) {
+		m.writeErrorsClient.Inc(1)
+	} else {
+		m.writeErrorsServer.Inc(1)
+	}
+}
+
+func newInfluxDBriteMetrics(scope tally.Scope) (influxDBWriteMetrics, error) {
+	writeLatencyBuckets, err := tally.ExponentialValueBuckets(1, 2, 15)
+	if err != nil {
+		return influxDBWriteMetrics{}, err
+	}
+	return influxDBWriteMetrics{
+		writeBatchSize:    scope.SubScope("write").Counter("batch-size"),
+		writeSuccess:      scope.SubScope("write").Counter("success"),
+		writeErrorsServer: scope.SubScope("write").Tagged(map[string]string{"code": "5XX"}).Counter("errors"),
+		writeBatchLatency: scope.SubScope("write").Histogram("batch-latency", writeLatencyBuckets),
+	}, nil
 }
 
 type ingestField struct {
@@ -280,14 +310,27 @@ func (ii *ingestIterator) CurrentMetadata() ts.Metadata {
 
 // NewInfluxWriterHandler returns a new influx write handler.
 func NewInfluxWriterHandler(options options.HandlerOptions) http.Handler {
+	scope := options.InstrumentOpts().
+		MetricsScope().
+		Tagged(map[string]string{"handler": "influxdb-write"})
+	metrics, err := newInfluxDBriteMetrics(scope)
+	if err != nil {
+		return nil
+	}
 	return &ingestWriteHandler{handlerOpts: options,
 		tagOpts:      options.TagOptions(),
-		promRewriter: newPromRewriter()}
+		promRewriter: newPromRewriter(),
+		metrics:      metrics,
+	}
 }
 
 func (iwh *ingestWriteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	batchRequestStopwatch := iwh.metrics.writeBatchLatency.Start()
+	defer batchRequestStopwatch.Stop()
+
 	bytes, err := ioutil.ReadAll(r.Body)
 	if err != nil {
+		iwh.metrics.incError(err)
 		xhttp.WriteError(w, err)
 		return
 	}
@@ -338,6 +381,8 @@ func (iwh *ingestWriteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 	iter := &ingestIterator{points: points, tagOpts: iwh.tagOpts, promRewriter: iwh.promRewriter}
 	batchErr := iwh.handlerOpts.DownsamplerAndWriter().WriteBatch(r.Context(), iter, opts)
 	if batchErr == nil {
+		iwh.metrics.writeBatchSize.Inc(int64(len(points)))
+		iwh.metrics.writeSuccess.Inc(1)
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
@@ -392,5 +437,7 @@ func (iwh *ingestWriteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 		resultErr = fmt.Sprintf("%s%sbad_request_errors: count=%d, last=%s",
 			resultErr, sep, numBadRequest, lastBadRequestErr)
 	}
-	xhttp.WriteError(w, xhttp.NewError(errors.New(resultErr), status))
+	resultError := xhttp.NewError(errors.New(resultErr), status)
+	iwh.metrics.incError(resultError)
+	xhttp.WriteError(w, resultError)
 }

@@ -21,7 +21,9 @@
 package xhttp
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	xerrors "github.com/m3db/m3/src/x/errors"
@@ -109,4 +111,24 @@ func WriteError(w http.ResponseWriter, err error, opts ...WriteErrorOption) {
 	}
 
 	json.NewEncoder(w).Encode(ErrorResponse{Error: err.Error()})
+}
+
+func getStatusCode(err error) int {
+	switch v := err.(type) {
+	case Error:
+		return v.Code()
+	case error:
+		if xerrors.IsInvalidParams(v) {
+			return http.StatusBadRequest
+		} else if errors.Is(err, context.DeadlineExceeded) {
+			return http.StatusGatewayTimeout
+		}
+	}
+	return http.StatusInternalServerError
+}
+
+// IsClientError returns true if this error would result in 4xx status code.
+func IsClientError(err error) bool {
+	code := getStatusCode(err)
+	return code >= 400 && code < 500
 }
