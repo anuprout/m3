@@ -90,10 +90,10 @@ func newInfluxDBriteMetrics(scope tally.Scope) (influxDBWriteMetrics, error) {
 		return influxDBWriteMetrics{}, err
 	}
 	return influxDBWriteMetrics{
-		writeBatchSize:    scope.SubScope("influx_write").Counter("batch-size"),
-		writeSuccess:      scope.SubScope("influx_write").Counter("success"),
-		writeErrorsServer: scope.SubScope("influx_write").Tagged(map[string]string{"code": "5XX"}).Counter("errors"),
-		writeBatchLatency: scope.SubScope("influx_write").Histogram("batch-latency", writeLatencyBuckets),
+		writeBatchSize:    scope.SubScope("write").Counter("batch-size"),
+		writeSuccess:      scope.SubScope("write").Counter("success"),
+		writeErrorsServer: scope.SubScope("write").Tagged(map[string]string{"code": "5XX"}).Counter("errors"),
+		writeBatchLatency: scope.SubScope("write").Histogram("batch-latency", writeLatencyBuckets),
 	}, nil
 }
 
@@ -310,9 +310,7 @@ func (ii *ingestIterator) CurrentMetadata() ts.Metadata {
 
 // NewInfluxWriterHandler returns a new influx write handler.
 func NewInfluxWriterHandler(options options.HandlerOptions) http.Handler {
-	scope := options.InstrumentOpts().
-		MetricsScope().
-		Tagged(map[string]string{"handler": "influxdb-write"})
+	scope := options.InstrumentOpts().MetricsScope().SubScope("influxdb-write")
 	metrics, err := newInfluxDBriteMetrics(scope)
 	if err != nil {
 		return nil
