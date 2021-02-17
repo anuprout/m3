@@ -343,10 +343,10 @@ func (s *dbSeries) Write(
 	startTime := time.Now()
 	s.Lock()
 	lockTime := time.Now()
-	s.metrics.acquireLockLatencyMilli.Inc(lockTime.Sub(startTime).Microseconds())
+	s.metrics.acquireLockLatencyMilli.Inc(lockTime.Sub(startTime).Milliseconds())
 	written, writeType, err := s.buffer.Write(ctx, s.id, timestamp, value,
 		unit, annotation, wOpts)
-	s.metrics.writeDatapointLatencyMilli.Inc(time.Now().Sub(lockTime).Microseconds())
+	s.metrics.writeDatapointLatencyMilli.Inc(time.Now().Sub(lockTime).Milliseconds())
 	s.Unlock()
 
 	return written, writeType, err
