@@ -22,7 +22,6 @@ package ingest
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
 
@@ -385,9 +384,6 @@ func (d *downsamplerAndWriter) WriteBatch(
 			}
 		}
 		batchWriteAggStart.Stop()
-		if time.Now().Sub(t1) > (time.Second) {
-			fmt.Println("Downsampler write duration: ", time.Now().Sub(t1))
-		}
 	}
 
 	// Reset the iter to write the unaggregated data.
