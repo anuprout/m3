@@ -22,7 +22,9 @@ package ingest
 
 import (
 	"context"
+	"fmt"
 	"sync"
+	"time"
 
 	"github.com/m3db/m3/src/cmd/services/m3coordinator/downsample"
 	"github.com/m3db/m3/src/metrics/policy"
@@ -372,6 +374,7 @@ func (d *downsamplerAndWriter) WriteBatch(
 	)
 
 	if d.shouldDownsample(overrides) {
+		t1 := time.Now()
 		batchWriteAggStart := d.metrics.writeAggBatchLatency.Start()
 		if errs := d.writeAggregatedBatch(iter, overrides); !errs.Empty() {
 			// Iterate and add through all the error to the multi error. It is
@@ -382,6 +385,9 @@ func (d *downsamplerAndWriter) WriteBatch(
 			}
 		}
 		batchWriteAggStart.Stop()
+		if time.Now().Sub(t1) > (time.Second) {
+			fmt.Println("Downsampler write duration: ", time.Now().Sub(t1))
+		}
 	}
 
 	// Reset the iter to write the unaggregated data.
