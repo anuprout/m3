@@ -448,7 +448,7 @@ func (s Stats) RecordLockAcquireLatency(v time.Duration) {
 	s.acquireLockLatency.RecordDuration(v)
 }
 
-// Increase lock latency
+// Increase dp write latency
 func (s Stats) RecordWriteDatapointLatency(v time.Duration) {
 	s.writeDatapointLatency.RecordDuration(v)
 }
