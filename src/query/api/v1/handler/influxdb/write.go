@@ -310,9 +310,7 @@ func (ii *ingestIterator) CurrentMetadata() ts.Metadata {
 
 // NewInfluxWriterHandler returns a new influx write handler.
 func NewInfluxWriterHandler(options options.HandlerOptions) http.Handler {
-	scope := options.InstrumentOpts().
-		MetricsScope().
-		Tagged(map[string]string{"handler": "influxdb-write"})
+	scope := options.InstrumentOpts().MetricsScope().SubScope("influxdb-write")
 	metrics, err := newInfluxDBriteMetrics(scope)
 	if err != nil {
 		return nil

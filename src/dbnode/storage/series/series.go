@@ -26,6 +26,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/m3db/m3/src/dbnode/namespace"
 	"github.com/m3db/m3/src/dbnode/persist"
 	"github.com/m3db/m3/src/dbnode/persist/fs/wide"
 	"github.com/m3db/m3/src/dbnode/storage/block"
@@ -36,8 +37,6 @@ import (
 	"github.com/m3db/m3/src/x/ident"
 	"github.com/m3db/m3/src/x/instrument"
 	xtime "github.com/m3db/m3/src/x/time"
-
-	"github.com/m3db/m3/src/dbnode/namespace"
 	"go.uber.org/zap"
 )
 
@@ -329,9 +328,13 @@ func (s *dbSeries) Write(
 		return s.bootstrapWrite(ctx, timestamp, value, unit, annotation, wOpts)
 	}
 
+	startTime := time.Now()
 	s.Lock()
+	lockTime := time.Now()
+	s.opts.Stats().RecordLockAcquireLatency(lockTime.Sub(startTime))
 	written, writeType, err := s.buffer.Write(ctx, s.id, timestamp, value,
 		unit, annotation, wOpts)
+	s.opts.Stats().RecordWriteDatapointLatency(time.Now().Sub(lockTime))
 	s.Unlock()
 
 	return written, writeType, err

@@ -34,7 +34,6 @@ import (
 	"github.com/m3db/m3/src/x/instrument"
 	xsync "github.com/m3db/m3/src/x/sync"
 	xtime "github.com/m3db/m3/src/x/time"
-
 	"github.com/uber-go/tally"
 )
 
@@ -104,7 +103,8 @@ type WriteOptions struct {
 }
 
 type downsamplerAndWriterMetrics struct {
-	dropped tally.Counter
+	dropped              tally.Counter
+	writeAggBatchLatency tally.Histogram
 }
 
 // downsamplerAndWriter encapsulates the logic for writing data to the downsampler,
@@ -125,12 +125,18 @@ func NewDownsamplerAndWriter(
 	instrumentOpts instrument.Options,
 ) DownsamplerAndWriter {
 	scope := instrumentOpts.MetricsScope().SubScope("downsampler")
+	writeLatencyBuckets, err := tally.ExponentialValueBuckets(1, 2, 15)
+	if err != nil {
+		return nil
+	}
+
 	return &downsamplerAndWriter{
 		store:       store,
 		downsampler: downsampler,
 		workerPool:  workerPool,
 		metrics: downsamplerAndWriterMetrics{
-			dropped: scope.Counter("metrics_dropped"),
+			dropped:              scope.Counter("metrics_dropped"),
+			writeAggBatchLatency: scope.SubScope("agg_batch_write").Histogram("latency", writeLatencyBuckets),
 		},
 	}
 }
@@ -366,6 +372,7 @@ func (d *downsamplerAndWriter) WriteBatch(
 	)
 
 	if d.shouldDownsample(overrides) {
+		batchWriteAggStart := d.metrics.writeAggBatchLatency.Start()
 		if errs := d.writeAggregatedBatch(iter, overrides); !errs.Empty() {
 			// Iterate and add through all the error to the multi error. It is
 			// ok not to use the addError method here as we are running single
@@ -374,6 +381,7 @@ func (d *downsamplerAndWriter) WriteBatch(
 				multiErr = multiErr.Add(err)
 			}
 		}
+		batchWriteAggStart.Stop()
 	}
 
 	// Reset the iter to write the unaggregated data.
