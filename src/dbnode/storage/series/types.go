@@ -37,7 +37,6 @@ import (
 	"github.com/m3db/m3/src/x/ident"
 	"github.com/m3db/m3/src/x/instrument"
 	xtime "github.com/m3db/m3/src/x/time"
-
 	"github.com/uber-go/tally"
 )
 
@@ -416,6 +415,8 @@ type Stats struct {
 	encodersPerBlock          tally.Histogram
 	encoderLimitWriteRejected tally.Counter
 	snapshotMergesEachBucket  tally.Counter
+	acquireLockLatency        tally.Histogram
+	writeDatapointLatency     tally.Histogram
 }
 
 // NewStats returns a new Stats for the provided scope.
@@ -424,13 +425,32 @@ func NewStats(scope tally.Scope) Stats {
 
 	buckets := append(tally.ValueBuckets{0},
 		tally.MustMakeExponentialValueBuckets(1, 2, 20)...)
+
+	lockLatencyBuckets := append(tally.ValueBuckets{0},
+		tally.MustMakeExponentialValueBuckets(1, 2, 20)...)
+
+	writeDatapointLatencyBuckets := append(tally.ValueBuckets{0},
+		tally.MustMakeExponentialValueBuckets(1, 2, 20)...)
+
 	return Stats{
 		encoderCreated:            subScope.Counter("encoder-created"),
 		coldWrites:                subScope.Counter("cold-writes"),
 		encodersPerBlock:          subScope.Histogram("encoders-per-block", buckets),
 		encoderLimitWriteRejected: subScope.Counter("encoder-limit-write-rejected"),
 		snapshotMergesEachBucket:  subScope.Counter("snapshot-merges-each-bucket"),
+		acquireLockLatency:        scope.Histogram("acquire-lock-latency", lockLatencyBuckets),
+		writeDatapointLatency:     scope.Histogram("write-datapoint-latency", writeDatapointLatencyBuckets),
 	}
+}
+
+// Increase lock latency
+func (s Stats) RecordLockAcquireLatency(v time.Duration) {
+	s.acquireLockLatency.RecordDuration(v)
+}
+
+// Increase lock latency
+func (s Stats) RecordWriteDatapointLatency(v time.Duration) {
+	s.writeDatapointLatency.RecordDuration(v)
 }
 
 // IncCreatedEncoders incs the EncoderCreated stat.
