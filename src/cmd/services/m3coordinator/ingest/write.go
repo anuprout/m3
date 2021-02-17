@@ -373,7 +373,6 @@ func (d *downsamplerAndWriter) WriteBatch(
 	)
 
 	if d.shouldDownsample(overrides) {
-		t1 := time.Now()
 		batchWriteAggStart := d.metrics.writeAggBatchLatency.Start()
 		if errs := d.writeAggregatedBatch(iter, overrides); !errs.Empty() {
 			// Iterate and add through all the error to the multi error. It is
