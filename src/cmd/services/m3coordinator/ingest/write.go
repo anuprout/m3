@@ -23,7 +23,6 @@ package ingest
 import (
 	"context"
 	"sync"
-	"time"
 
 	"github.com/m3db/m3/src/cmd/services/m3coordinator/downsample"
 	"github.com/m3db/m3/src/metrics/policy"
