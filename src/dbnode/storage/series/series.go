@@ -26,6 +26,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/m3db/m3/src/dbnode/namespace"
 	"github.com/m3db/m3/src/dbnode/persist"
 	"github.com/m3db/m3/src/dbnode/persist/fs/wide"
 	"github.com/m3db/m3/src/dbnode/storage/block"
@@ -36,8 +37,7 @@ import (
 	"github.com/m3db/m3/src/x/ident"
 	"github.com/m3db/m3/src/x/instrument"
 	xtime "github.com/m3db/m3/src/x/time"
-
-	"github.com/m3db/m3/src/dbnode/namespace"
+	"github.com/uber-go/tally"
 	"go.uber.org/zap"
 )
 
@@ -78,6 +78,12 @@ type dbSeries struct {
 	onRetrieveBlock             block.OnRetrieveBlock
 	blockOnEvictedFromWiredList block.OnEvictedFromWiredList
 	pool                        DatabaseSeriesPool
+	metrics                     dbSeriesMetrics
+}
+
+type dbSeriesMetrics struct {
+	acquireLockLatencyMilli    tally.Counter
+	writeDatapointLatencyMilli tally.Counter
 }
 
 type dbSeriesBootstrap struct {
@@ -105,8 +111,13 @@ func newPooledDatabaseSeries(pool DatabaseSeriesPool) DatabaseSeries {
 // NB(prateek): dbSeries.Reset(...) must be called upon the returned
 // object prior to use.
 func newDatabaseSeries() *dbSeries {
+	scope := instrument.NewOptions().MetricsScope().SubScope("dbSeries")
 	series := &dbSeries{
 		cachedBlocks: block.NewDatabaseSeriesBlocks(0),
+		metrics: dbSeriesMetrics{
+			acquireLockLatencyMilli:    scope.Counter("acquire_lock_latency"),
+			writeDatapointLatencyMilli: scope.Counter("write_datapoint_latency"),
+		},
 	}
 	series.buffer = newDatabaseBuffer()
 	return series
@@ -329,9 +340,13 @@ func (s *dbSeries) Write(
 		return s.bootstrapWrite(ctx, timestamp, value, unit, annotation, wOpts)
 	}
 
+	startTime := time.Now()
 	s.Lock()
+	lockTime := time.Now()
+	s.metrics.acquireLockLatencyMilli.Inc(lockTime.Sub(startTime).Microseconds())
 	written, writeType, err := s.buffer.Write(ctx, s.id, timestamp, value,
 		unit, annotation, wOpts)
+	s.metrics.writeDatapointLatencyMilli.Inc(time.Now().Sub(lockTime).Microseconds())
 	s.Unlock()
 
 	return written, writeType, err
