@@ -415,8 +415,8 @@ type Stats struct {
 	encodersPerBlock          tally.Histogram
 	encoderLimitWriteRejected tally.Counter
 	snapshotMergesEachBucket  tally.Counter
-	acquireLockLatency        tally.Histogram
-	writeDatapointLatency     tally.Histogram
+	acquireLockLatency        tally.Timer
+	writeDatapointLatency     tally.Timer
 }
 
 // NewStats returns a new Stats for the provided scope.
@@ -425,32 +425,25 @@ func NewStats(scope tally.Scope) Stats {
 
 	buckets := append(tally.ValueBuckets{0},
 		tally.MustMakeExponentialValueBuckets(1, 2, 20)...)
-
-	lockLatencyBuckets := append(tally.ValueBuckets{0},
-		tally.MustMakeExponentialValueBuckets(1, 2, 20)...)
-
-	writeDatapointLatencyBuckets := append(tally.ValueBuckets{0},
-		tally.MustMakeExponentialValueBuckets(1, 2, 20)...)
-
 	return Stats{
 		encoderCreated:            subScope.Counter("encoder-created"),
 		coldWrites:                subScope.Counter("cold-writes"),
 		encodersPerBlock:          subScope.Histogram("encoders-per-block", buckets),
 		encoderLimitWriteRejected: subScope.Counter("encoder-limit-write-rejected"),
 		snapshotMergesEachBucket:  subScope.Counter("snapshot-merges-each-bucket"),
-		acquireLockLatency:        scope.Histogram("acquire-lock-latency", lockLatencyBuckets),
-		writeDatapointLatency:     scope.Histogram("write-datapoint-latency", writeDatapointLatencyBuckets),
+		acquireLockLatency:        scope.Timer("acquire-lock-latency"),
+		writeDatapointLatency:     scope.Timer("write-datapoint-latency"),
 	}
 }
 
 // Increase lock latency
 func (s Stats) RecordLockAcquireLatency(v time.Duration) {
-	s.acquireLockLatency.RecordDuration(v)
+	s.acquireLockLatency.Record(v)
 }
 
-// Increase dp write latency
+// Increase lock latency
 func (s Stats) RecordWriteDatapointLatency(v time.Duration) {
-	s.writeDatapointLatency.RecordDuration(v)
+	s.writeDatapointLatency.Record(v)
 }
 
 // IncCreatedEncoders incs the EncoderCreated stat.
