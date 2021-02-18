@@ -70,10 +70,10 @@ type ingestWriteHandler struct {
 
 type influxDBWriteMetrics struct {
 	writeBatchSize    tally.Counter
-	writeSuccess      tally.Counter
+	writeBatchSuccess tally.Counter
 	writeErrorsServer tally.Counter
 	writeErrorsClient tally.Counter
-	writeBatchLatency tally.Histogram
+	writeBatchLatency tally.Timer
 }
 
 func (m *influxDBWriteMetrics) incError(err error) {
@@ -85,15 +85,11 @@ func (m *influxDBWriteMetrics) incError(err error) {
 }
 
 func newInfluxDBriteMetrics(scope tally.Scope) (influxDBWriteMetrics, error) {
-	writeLatencyBuckets, err := tally.ExponentialValueBuckets(1, 2, 15)
-	if err != nil {
-		return influxDBWriteMetrics{}, err
-	}
 	return influxDBWriteMetrics{
-		writeBatchSize:    scope.SubScope("write").Counter("batch-size"),
-		writeSuccess:      scope.SubScope("write").Counter("success"),
+		writeBatchSize:    scope.Counter("batch-size"),
+		writeBatchSuccess: scope.Counter("batch-success"),
 		writeErrorsServer: scope.SubScope("write").Tagged(map[string]string{"code": "5XX"}).Counter("errors"),
-		writeBatchLatency: scope.SubScope("write").Histogram("batch-latency", writeLatencyBuckets),
+		writeBatchLatency: scope.Timer("batch-latency"),
 	}, nil
 }
 
@@ -323,9 +319,7 @@ func NewInfluxWriterHandler(options options.HandlerOptions) http.Handler {
 }
 
 func (iwh *ingestWriteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	batchRequestStopwatch := iwh.metrics.writeBatchLatency.Start()
-	defer batchRequestStopwatch.Stop()
-
+	callStart := time.Now()
 	bytes, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		iwh.metrics.incError(err)
@@ -380,7 +374,8 @@ func (iwh *ingestWriteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 	batchErr := iwh.handlerOpts.DownsamplerAndWriter().WriteBatch(r.Context(), iter, opts)
 	if batchErr == nil {
 		iwh.metrics.writeBatchSize.Inc(int64(len(points)))
-		iwh.metrics.writeSuccess.Inc(1)
+		iwh.metrics.writeBatchSuccess.Inc(1)
+		iwh.metrics.writeBatchLatency.Record(time.Now().Sub(callStart))
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
