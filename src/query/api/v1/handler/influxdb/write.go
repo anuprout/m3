@@ -77,7 +77,7 @@ type influxDBWriteMetrics struct {
 }
 
 func (m *influxDBWriteMetrics) incError(err error) {
-	if err == nil {
+	if (err == nil) {
 		return
 	}
 	if xhttp.IsClientError(err) {
@@ -92,6 +92,7 @@ func newInfluxDBriteMetrics(scope tally.Scope) (influxDBWriteMetrics, error) {
 		writeBatchSize:    scope.Counter("batch-size"),
 		writeBatchSuccess: scope.Counter("batch-success"),
 		writeErrorsServer: scope.SubScope("write").Tagged(map[string]string{"code": "5XX"}).Counter("errors"),
+		writeErrorsClient: scope.SubScope("write").Tagged(map[string]string{"code": "4XX"}).Counter("errors"),
 		writeBatchLatency: scope.Timer("batch-latency"),
 	}, nil
 }
