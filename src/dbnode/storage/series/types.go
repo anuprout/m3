@@ -436,12 +436,12 @@ func NewStats(scope tally.Scope) Stats {
 	}
 }
 
-// Increase lock latency
+// Set lock latency
 func (s Stats) RecordLockAcquireLatency(v time.Duration) {
 	s.acquireLockLatency.Record(v)
 }
 
-// Increase lock latency
+// Set dp write latency
 func (s Stats) RecordWriteDatapointLatency(v time.Duration) {
 	s.writeDatapointLatency.Record(v)
 }
