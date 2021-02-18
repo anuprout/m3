@@ -77,7 +77,7 @@ type influxDBWriteMetrics struct {
 }
 
 func (m *influxDBWriteMetrics) incError(err error) {
-	if (err == nil) {
+	if err == nil {
 		return
 	}
 	if xhttp.IsClientError(err) {
