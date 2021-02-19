@@ -104,6 +104,7 @@ type WriteOptions struct {
 }
 
 type downsamplerAndWriterMetrics struct {
+	pointsSentToStore    tally.Counter
 	dropped              tally.Counter
 	writeAggBatchLatency tally.Timer
 }
@@ -131,6 +132,7 @@ func NewDownsamplerAndWriter(
 		downsampler: downsampler,
 		workerPool:  workerPool,
 		metrics: downsamplerAndWriterMetrics{
+			pointsSentToStore:    scope.Counter("datapoints_sent_to_store"),
 			dropped:              scope.Counter("metrics_dropped"),
 			writeAggBatchLatency: scope.Timer("agg_batch_write_latency"),
 		},
@@ -418,6 +420,7 @@ func (d *downsamplerAndWriter) WriteBatch(
 					})
 					if err == nil {
 						err = d.store.Write(ctx, writeQuery)
+						d.metrics.pointsSentToStore.Inc(1)
 					}
 					if err != nil {
 						addError(err)
